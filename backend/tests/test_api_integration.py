@@ -1,20 +1,10 @@
 import pytest
 from httpx import AsyncClient
-from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget
 from app.core.config import settings
 
 @pytest.mark.asyncio
 async def test_create_agent_api(client: AsyncClient, session):
-    # First login to get token (simulate gateway disabled)
-    # For tests, we can directly use the admin user created in setup
-    # Or we can mock auth. Let's get a token by logging in.
-    # Since tests run in isolation, we need to create a user first.
-    # This is simplified: we'll use the no-auth token endpoint if gateway disabled.
-    # For now, we'll assume gateway is enabled and we have a user.
-    # We'll use the admin credentials from environment.
-    # Alternatively, we can disable gateway in test settings.
-    
-    # For simplicity, we'll skip auth by setting an internal test header.
+    # Use internal API key for authentication
     headers = {"Authorization": f"Bearer {settings.secrets.get('INTERNAL_API_KEY')}"}
     
     agent_in = {

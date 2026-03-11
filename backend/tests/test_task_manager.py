@@ -19,5 +19,5 @@ async def test_create_task_graph(session):
     graph = await task_manager.create_task_graph("h-test", "Test goal", tasks, edges)
     assert graph.goal_id.startswith("g-")
     assert graph.goal_description == "Test goal"
-    # Clean up
-    await task_manager.delete_task_graph(graph.goal_id)  # would need to implement
+    # Clean up (if you have a delete method)
+    # await task_manager.delete_task_graph(graph.goal_id)
