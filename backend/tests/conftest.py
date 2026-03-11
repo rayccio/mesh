@@ -5,7 +5,7 @@ import tempfile
 from unittest.mock import patch, MagicMock
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator, Generator
 
 # Set HIVEBOT_DATA to a temporary directory before importing app modules
@@ -25,9 +25,9 @@ from app.main import app
 from app.core.config import settings
 from app.core.secrets import SecretsManager
 
-# Mock the secrets manager to avoid file access
+# Mock the secrets manager to avoid file access and return the test key
 mock_secrets = MagicMock(spec=SecretsManager)
-mock_secrets.get.return_value = None
+mock_secrets.get.return_value = "test-key"  # for INTERNAL_API_KEY
 mock_secrets.set.return_value = None
 
 # Patch the settings._secrets attribute
@@ -41,12 +41,14 @@ TEST_DATABASE_URL = f"postgresql+asyncpg://{os.environ['POSTGRES_USER']}:{os.env
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator:
+    """Create a new event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 @pytest.fixture(scope="session")
 async def engine():
+    """Create a SQLAlchemy engine for the test database."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -56,22 +58,32 @@ async def engine():
 
 @pytest.fixture
 async def session(engine) -> AsyncGenerator[AsyncSession, None]:
+    """Create a new database session for each test."""
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
+        # Rollback any uncommitted changes and close the session
+        await session.rollback()
+        await session.close()
 
 @pytest.fixture
 async def client(session) -> AsyncGenerator:
+    """Create an HTTP client for testing the FastAPI app."""
     # Override dependency to use test session
     async def override_get_db():
         yield session
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    
+    # Use ASGITransport to pass the FastAPI app to httpx
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    
     app.dependency_overrides.clear()
 
 @pytest.fixture
 async def redis_client():
+    """Create a test Redis client."""
     import redis.asyncio as redis
     client = await redis.from_url("redis://localhost:6379/1", decode_responses=True)
     await client.flushdb()
