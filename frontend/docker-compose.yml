@@ -1,0 +1,10 @@
+
+services:
+  zikoranode:
+    build: .
+    container_name: zikoranode_app
+    ports:
+      - "80:80"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: always

@@ -1,0 +1,9 @@
+
+{
+  "name": "ZikoraNode v2 - Pro Orchestrator",
+  "description": "Enterprise-grade multi-agent mesh with hierarchical reporting, isolated pod sandboxing, and production-ready communication relays for Telegram, Discord, and Slack.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,306 @@
+services:
+  agent-builder:
+    build:
+      context: .
+      dockerfile: docker/agent/Dockerfile
+    image: hivebot/agent:latest
+    container_name: hivebot_agent_builder
+    profiles: ["tools"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: hivebot_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - hivebot_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: hivebot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hivebot
+      POSTGRES_PASSWORD: hivebot
+      POSTGRES_DB: hivebot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hivebot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hivebot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    image: hivebot/backend:latest
+    container_name: hivebot_backend
+    restart: unless-stopped
+    user: "0:0"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=hivebot
+      - POSTGRES_PASSWORD=hivebot
+      - POSTGRES_DB=hivebot
+      - HIVEBOT_DATA=/app/data
+      - DOCKER_NETWORK=hivebot_network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./agents:/app/data/agents
+      - hivebot_secrets:/app/data/secrets
+      - ./global_files:/app/data/global_files
+      - ./data:/app/data
+      - ./.env:/app/.env
+    networks:
+      - hivebot_network
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: hivebot/worker:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=hivebot
+      - POSTGRES_PASSWORD=hivebot
+      - POSTGRES_DB=hivebot
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ORCHESTRATOR_URL=http://backend:8000
+      - SIMULATOR_URL=http://simulator:8080   # new
+    volumes:
+      - ./agents:/app/data/agents
+    networks:
+      - hivebot_network
+    deploy:
+      replicas: 2
+
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/simulator.Dockerfile
+    image: hivebot/simulator:latest
+    container_name: hivebot_simulator
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - hivebot_network
+    ports:
+      - "8086:8080"
+
+  meta-agent:
+    build:
+      context: .
+      dockerfile: docker/meta-agent.Dockerfile
+    image: hivebot/meta-agent:latest
+    container_name: hivebot_meta_agent
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=hivebot
+      - POSTGRES_PASSWORD=hivebot
+      - POSTGRES_DB=hivebot
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ORCHESTRATOR_URL=http://backend:8000
+      - SIMULATOR_URL=http://simulator:8080
+    networks:
+      - hivebot_network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    image: hivebot/frontend:latest
+    container_name: hivebot_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - hivebot_network
+    ports:
+      - "8080:80"
+
+  bridge-base:
+    build:
+      context: .
+      dockerfile: docker/bridge-base.Dockerfile
+    image: hivebot/bridge-base:latest
+    container_name: hivebot_bridge_base
+    profiles: ["tools"]
+
+  bridge-telegram:
+    build:
+      context: .
+      dockerfile: docker/bridge-telegram.Dockerfile
+    image: hivebot/bridge-telegram:latest
+    container_name: hivebot_bridge_telegram
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - ./bridges.env
+    environment:
+      - CHANNEL_TYPE=telegram
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_API_URL=http://backend:8000/api/v1
+      - WEBHOOK_PORT=8080
+    networks:
+      - hivebot_network
+    ports:
+      - "8081:8080"
+
+  bridge-discord:
+    build:
+      context: .
+      dockerfile: docker/bridge-discord.Dockerfile
+    image: hivebot/bridge-discord:latest
+    container_name: hivebot_bridge_discord
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - ./bridges.env
+    environment:
+      - CHANNEL_TYPE=discord
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_API_URL=http://backend:8000/api/v1
+      - WEBHOOK_PORT=8080
+    networks:
+      - hivebot_network
+    ports:
+      - "8082:8080"
+
+  bridge-slack:
+    build:
+      context: .
+      dockerfile: docker/bridge-slack.Dockerfile
+    image: hivebot/bridge-slack:latest
+    container_name: hivebot_bridge_slack
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - ./bridges.env
+    environment:
+      - CHANNEL_TYPE=slack
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_API_URL=http://backend:8000/api/v1
+      - WEBHOOK_PORT=8080
+    networks:
+      - hivebot_network
+    ports:
+      - "8083:8080"
+
+  bridge-whatsapp:
+    build:
+      context: .
+      dockerfile: docker/bridge-whatsapp.Dockerfile
+    image: hivebot/bridge-whatsapp:latest
+    container_name: hivebot_bridge_whatsapp
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - ./bridges.env
+    environment:
+      - CHANNEL_TYPE=whatsapp
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_API_URL=http://backend:8000/api/v1
+      - WEBHOOK_PORT=8080
+    networks:
+      - hivebot_network
+    ports:
+      - "8084:8080"
+
+  bridge-teams:
+    build:
+      context: .
+      dockerfile: docker/bridge-teams.Dockerfile
+    image: hivebot/bridge-teams:latest
+    container_name: hivebot_bridge_teams
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - ./bridges.env
+    environment:
+      - CHANNEL_TYPE=teams
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_API_URL=http://backend:8000/api/v1
+      - WEBHOOK_PORT=8080
+    networks:
+      - hivebot_network
+    ports:
+      - "8085:8080"
+
+networks:
+  hivebot_network:
+    name: hivebot_network
+    driver: bridge
+
+volumes:
+  redis_data:
+  postgres_data:
+  hivebot_secrets:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./secrets
+      o: bind

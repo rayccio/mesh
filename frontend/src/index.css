@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-100;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-zinc-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-700 rounded;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-600;
+  }
+}
+
+/* Responsive text utilities */
+@layer utilities {
+  .text-responsive-lg {
+    @apply text-lg md:text-xl lg:text-2xl;
+  }
+  .text-responsive-md {
+    @apply text-base md:text-lg lg:text-xl;
+  }
+  .text-responsive-sm {
+    @apply text-sm md:text-base lg:text-lg;
+  }
+  .text-responsive-xs {
+    @apply text-xs md:text-sm lg:text-base;
+  }
+}
