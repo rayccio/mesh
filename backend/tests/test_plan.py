@@ -15,46 +15,44 @@ async def test_create_plan_with_scheduler_enabled():
     mock_hive.global_user_md = "test context"
     mock_hive_manager.get_hive = AsyncMock(return_value=mock_hive)
 
-    # Mock planner
-    mock_planner = AsyncMock()
-    mock_planner.plan.return_value = {
-        "tasks": [
-            {"id": "task1", "description": "Do something", "depends_on": []}
-        ],
-        "reasoning": "ok"
-    }
+    # Patch HiveManager inside the endpoint
+    with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
+        # Mock planner
+        mock_planner = AsyncMock()
+        mock_planner.plan.return_value = {
+            "tasks": [
+                {"id": "task1", "description": "Do something", "depends_on": []}
+            ],
+            "reasoning": "ok"
+        }
+        with patch('app.api.v1.endpoints.plan.Planner', return_value=mock_planner):
+            # Mock task graph creation
+            mock_graph = MagicMock()
+            mock_graph.goal_id = "g-test"
+            mock_task_manager.create_task_graph.return_value = mock_graph
 
-    # Mock task graph creation
-    mock_graph = MagicMock()
-    mock_graph.goal_id = "g-test"
-    mock_task_manager.create_task_graph.return_value = mock_graph
+            # Patch redis zadd and settings
+            mock_settings = MagicMock()
+            mock_settings.SCHEDULER_ENABLED = True
+            with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
+                 patch('app.core.config.settings', mock_settings):
 
-    # Patch redis zadd and the global settings object
-    mock_settings = MagicMock()
-    mock_settings.SCHEDULER_ENABLED = True
-    with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
-         patch('app.core.config.settings', mock_settings):
+                request = GoalRequest(goal="Test goal")
+                result = await create_plan(
+                    hive_id="h-test",
+                    goal_req=request,
+                    task_manager=mock_task_manager,
+                    agent_manager=mock_agent_manager
+                )
 
-        # Call endpoint
-        request = GoalRequest(goal="Test goal")
-        result = await create_plan(
-            hive_id="h-test",
-            goal_req=request,
-            task_manager=mock_task_manager,
-            agent_manager=mock_agent_manager
-        )
-
-        # Verify redis zadd called once
-        mock_zadd.assert_awaited_once()
-        args = mock_zadd.call_args[0]
-        assert args[0] == "tasks:pending"
-        # The task id is dynamic, so we just check it's a string and score is a float
-        assert isinstance(list(args[1].keys())[0], str)
-        assert isinstance(list(args[1].values())[0], float)
+                mock_zadd.assert_awaited_once()
+                args = mock_zadd.call_args[0]
+                assert args[0] == "tasks:pending"
+                assert isinstance(list(args[1].keys())[0], str)
+                assert isinstance(list(args[1].values())[0], float)
 
 @pytest.mark.asyncio
 async def test_create_plan_with_scheduler_disabled():
-    # Mock dependencies
     mock_task_manager = AsyncMock()
     mock_agent_manager = AsyncMock()
     mock_hive_manager = AsyncMock()
@@ -62,27 +60,28 @@ async def test_create_plan_with_scheduler_disabled():
     mock_hive.global_user_md = "test context"
     mock_hive_manager.get_hive = AsyncMock(return_value=mock_hive)
 
-    mock_planner = AsyncMock()
-    mock_planner.plan.return_value = {
-        "tasks": [{"id": "task1", "description": "Do something", "depends_on": []}],
-        "reasoning": "ok"
-    }
-    mock_graph = MagicMock()
-    mock_graph.goal_id = "g-test"
-    mock_task_manager.create_task_graph.return_value = mock_graph
+    with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
+        mock_planner = AsyncMock()
+        mock_planner.plan.return_value = {
+            "tasks": [{"id": "task1", "description": "Do something", "depends_on": []}],
+            "reasoning": "ok"
+        }
+        with patch('app.api.v1.endpoints.plan.Planner', return_value=mock_planner):
+            mock_graph = MagicMock()
+            mock_graph.goal_id = "g-test"
+            mock_task_manager.create_task_graph.return_value = mock_graph
 
-    mock_settings = MagicMock()
-    mock_settings.SCHEDULER_ENABLED = False
-    with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
-         patch('app.core.config.settings', mock_settings):
+            mock_settings = MagicMock()
+            mock_settings.SCHEDULER_ENABLED = False
+            with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
+                 patch('app.core.config.settings', mock_settings):
 
-        request = GoalRequest(goal="Test goal")
-        result = await create_plan(
-            hive_id="h-test",
-            goal_req=request,
-            task_manager=mock_task_manager,
-            agent_manager=mock_agent_manager
-        )
+                request = GoalRequest(goal="Test goal")
+                result = await create_plan(
+                    hive_id="h-test",
+                    goal_req=request,
+                    task_manager=mock_task_manager,
+                    agent_manager=mock_agent_manager
+                )
 
-        # Verify redis not called
-        mock_zadd.assert_not_called()
+                mock_zadd.assert_not_called()

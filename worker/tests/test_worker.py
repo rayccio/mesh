@@ -14,13 +14,15 @@ from worker.main import (
 @pytest.mark.asyncio
 async def test_register_agent_idle():
     with patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_from_url:
+        # Create a mock client that simulates an async Redis client
         mock_redis_client = AsyncMock()
-        mock_redis_client.sadd = AsyncMock(return_value=None)
+        mock_redis_client.sadd = AsyncMock(return_value=1)
         mock_redis_client.close = AsyncMock(return_value=None)
 
-        # Make the coroutine return the client
-        mock_coro = AsyncMock(return_value=mock_redis_client)
-        mock_from_url.return_value = mock_coro
+        # Make the from_url mock return a coroutine that yields the client
+        async def mock_coro(*args, **kwargs):
+            return mock_redis_client
+        mock_from_url.side_effect = mock_coro
 
         await register_agent_idle("agent1")
 
@@ -42,9 +44,10 @@ async def test_process_think_command_registers_idle():
     mock_redis_client.publish = AsyncMock(return_value=None)
     mock_redis_client.close = AsyncMock(return_value=None)
 
-    # Patch redis.from_url to return a coroutine that returns the client
-    mock_coro = AsyncMock(return_value=mock_redis_client)
-    mock_from_url = AsyncMock(return_value=mock_coro)
+    # Mock redis.from_url to return a coroutine that returns the client
+    async def mock_coro(*args, **kwargs):
+        return mock_redis_client
+    mock_from_url = AsyncMock(side_effect=mock_coro)
 
     with patch('worker.main.get_agent_from_db', mock_get_agent), \
          patch('worker.main.update_agent_state', mock_update), \
@@ -72,8 +75,9 @@ async def test_process_task_assign_registers_idle():
     mock_redis_client.publish = AsyncMock(return_value=None)
     mock_redis_client.close = AsyncMock(return_value=None)
 
-    mock_coro = AsyncMock(return_value=mock_redis_client)
-    mock_from_url = AsyncMock(return_value=mock_coro)
+    async def mock_coro(*args, **kwargs):
+        return mock_redis_client
+    mock_from_url = AsyncMock(side_effect=mock_coro)
 
     with patch('worker.main.get_agent_from_db', mock_get_agent), \
          patch('worker.main.update_agent_state', mock_update), \

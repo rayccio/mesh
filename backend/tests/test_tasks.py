@@ -25,7 +25,7 @@ async def test_assign_task_removes_from_redis():
     mock_agent_manager.get_agent.return_value = agent
     mock_task_manager.assign_task.return_value = True
 
-    # Patch the individual redis methods on the real redis_service
+    # Patch redis methods directly
     with patch('app.services.redis_service.redis_service.zrem', new_callable=AsyncMock) as mock_zrem, \
          patch('app.services.redis_service.redis_service.srem', new_callable=AsyncMock) as mock_srem, \
          patch('app.services.redis_service.redis_service.publish', new_callable=AsyncMock) as mock_publish:
@@ -61,7 +61,6 @@ async def test_assign_task_non_pending_fails():
     mock_task_manager.get_task.return_value = task
     mock_agent_manager.get_agent.return_value = agent
 
-    # Patch redis methods (they won't be called because exception should be raised)
     with patch('app.services.redis_service.redis_service.zrem', new_callable=AsyncMock), \
          patch('app.services.redis_service.redis_service.srem', new_callable=AsyncMock), \
          patch('app.services.redis_service.redis_service.publish', new_callable=AsyncMock):
