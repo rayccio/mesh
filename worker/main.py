@@ -47,6 +47,12 @@ async def update_agent_state(agent_id: str, new_state: dict):
         )
         await session.commit()
 
+async def register_agent_idle(agent_id: str):
+    """Add agent to Redis idle set."""
+    redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+    await redis_client.sadd("agents:idle", agent_id)
+    await redis_client.close()
+
 async def call_ai_delta(agent_id, user_input, model_config):
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/generate-delta"
     headers = {
@@ -136,6 +142,9 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
     agent_data["status"] = "IDLE"
     await update_agent_state(agent_id, agent_data)
 
+    # --- NEW: Register agent as idle in Redis ---
+    await register_agent_idle(agent_id)
+
     # Determine reporting target
     reporting_target = agent_data.get("reportingTarget", "PARENT_AGENT")
     parent_id = agent_data.get("parentId")
@@ -209,6 +218,9 @@ Carry out the task. Use your tools if needed. When you are done, provide the fin
 
     agent_data["status"] = "IDLE"
     await update_agent_state(agent_id, agent_data)
+
+    # --- NEW: Register agent as idle in Redis ---
+    await register_agent_idle(agent_id)
 
     result = {
         "agent_id": agent_id,

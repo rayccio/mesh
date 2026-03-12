@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import HTTPException
 from app.api.v1.endpoints.tasks import assign_task, CompleteTaskRequest
 from app.models.task import Task, TaskStatus

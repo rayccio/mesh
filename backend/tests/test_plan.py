@@ -29,9 +29,8 @@ async def test_create_plan_with_scheduler_enabled():
     mock_graph.goal_id = "g-test"
     mock_task_manager.create_task_graph.return_value = mock_graph
 
-    # Mock redis_service
-    mock_redis = AsyncMock()
-    with patch('app.api.v1.endpoints.plan.redis_service', mock_redis), \
+    # Patch the redis zadd method and settings
+    with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
          patch('app.api.v1.endpoints.plan.settings', MagicMock(SCHEDULER_ENABLED=True)):
 
         # Call endpoint
@@ -43,10 +42,9 @@ async def test_create_plan_with_scheduler_enabled():
             agent_manager=mock_agent_manager
         )
 
-        # Verify redis zadd called for each task
-        mock_redis.zadd.assert_called_once()
-        # Since there's one task, we can check the call
-        args = mock_redis.zadd.call_args[0]
+        # Verify redis zadd called once
+        mock_zadd.assert_awaited_once()
+        args = mock_zadd.call_args[0]
         assert args[0] == "tasks:pending"
         # The task id is dynamic, so we just check it's a string and score is a float
         assert isinstance(list(args[1].keys())[0], str)
@@ -54,7 +52,7 @@ async def test_create_plan_with_scheduler_enabled():
 
 @pytest.mark.asyncio
 async def test_create_plan_with_scheduler_disabled():
-    # Same as above but with scheduler disabled
+    # Mock dependencies
     mock_task_manager = AsyncMock()
     mock_agent_manager = AsyncMock()
     mock_hive_manager = AsyncMock()
@@ -71,8 +69,7 @@ async def test_create_plan_with_scheduler_disabled():
     mock_graph.goal_id = "g-test"
     mock_task_manager.create_task_graph.return_value = mock_graph
 
-    mock_redis = AsyncMock()
-    with patch('app.api.v1.endpoints.plan.redis_service', mock_redis), \
+    with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
          patch('app.api.v1.endpoints.plan.settings', MagicMock(SCHEDULER_ENABLED=False)):
 
         request = GoalRequest(goal="Test goal")
@@ -84,4 +81,4 @@ async def test_create_plan_with_scheduler_disabled():
         )
 
         # Verify redis not called
-        mock_redis.zadd.assert_not_called()
+        mock_zadd.assert_not_called()
