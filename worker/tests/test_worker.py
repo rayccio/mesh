@@ -15,10 +15,10 @@ from worker.main import (
 async def test_register_agent_idle():
     with patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_from_url:
         mock_redis_client = AsyncMock()
-        mock_redis_client.sadd = AsyncMock()
-        mock_redis_client.close = AsyncMock()
+        mock_redis_client.sadd = AsyncMock(return_value=None)
+        mock_redis_client.close = AsyncMock(return_value=None)
 
-        # Proper two‑level mock: from_url returns a coroutine that returns the client
+        # Make the coroutine return the client
         mock_coro = AsyncMock(return_value=mock_redis_client)
         mock_from_url.return_value = mock_coro
 
@@ -39,10 +39,10 @@ async def test_process_think_command_registers_idle():
     mock_update = AsyncMock()
     mock_call_ai = AsyncMock(return_value="AI response")
     mock_redis_client = AsyncMock()
-    mock_redis_client.publish = AsyncMock()
-    mock_redis_client.close = AsyncMock()
+    mock_redis_client.publish = AsyncMock(return_value=None)
+    mock_redis_client.close = AsyncMock(return_value=None)
 
-    # Patch redis.from_url to return a coroutine that returns the mock client
+    # Patch redis.from_url to return a coroutine that returns the client
     mock_coro = AsyncMock(return_value=mock_redis_client)
     mock_from_url = AsyncMock(return_value=mock_coro)
 
@@ -55,7 +55,6 @@ async def test_process_think_command_registers_idle():
         await process_think_command("agent1", "user input", {}, simulation=False)
 
         mock_register.assert_awaited_once_with("agent1")
-        # Optionally verify publish was called
         mock_redis_client.publish.assert_awaited()
 
 @pytest.mark.asyncio
@@ -70,8 +69,8 @@ async def test_process_task_assign_registers_idle():
     mock_update = AsyncMock()
     mock_call_ai = AsyncMock(return_value="AI output")
     mock_redis_client = AsyncMock()
-    mock_redis_client.publish = AsyncMock()
-    mock_redis_client.close = AsyncMock()
+    mock_redis_client.publish = AsyncMock(return_value=None)
+    mock_redis_client.close = AsyncMock(return_value=None)
 
     mock_coro = AsyncMock(return_value=mock_redis_client)
     mock_from_url = AsyncMock(return_value=mock_coro)
