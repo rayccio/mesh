@@ -10,9 +10,22 @@ from aiohttp import web
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scheduler")
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+# Redis settings
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")          # default to localhost for CI
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://hivebot:hivebot@postgres/hivebot")
+
+# PostgreSQL settings – build DSN from parts
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+POSTGRES_USER = os.getenv("POSTGRES_USER", "hivebot")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "hivebot")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "hivebot_test")
+
+POSTGRES_DSN = os.getenv(
+    "POSTGRES_DSN",
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
 AUTO_ASSIGN = os.getenv("SCHEDULER_AUTO_ASSIGN", "false").lower() == "true"
 ENABLED = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
 
