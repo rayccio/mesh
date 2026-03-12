@@ -3,8 +3,7 @@ import pytest
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
 
@@ -22,7 +21,7 @@ os.makedirs('/tmp/hivebot_test', exist_ok=True)
 # Use a separate test database
 TEST_DATABASE_URL = "postgresql+asyncpg://hivebot:hivebot@localhost/hivebot_test"
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def event_loop() -> Generator:
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
@@ -64,7 +63,9 @@ async def client(session) -> AsyncGenerator:
 
     # Patch the redis_service.client
     with patch.object(redis_service, 'client', redis_mock):
-        async with AsyncClient(app=app, base_url="http://test") as ac:
+        # Use ASGITransport to mount the FastAPI app
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac
 
     app.dependency_overrides.clear()

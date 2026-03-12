@@ -48,3 +48,10 @@ class HiveRepository:
         )
         await self.db.commit()
         return hive
+
+    async def delete(self, hive_id: str) -> bool:
+        result = await self.db.execute(
+            delete(HiveModel).where(HiveModel.id == hive_id)
+        )
+        await self.db.commit()
+        return result.rowcount > 0

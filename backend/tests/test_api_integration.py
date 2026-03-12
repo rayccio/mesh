@@ -1,14 +1,11 @@
 import pytest
 from httpx import AsyncClient
-from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget
 from app.core.config import settings
-from app.services.redis_service import redis_service
 from unittest.mock import patch
 
 @pytest.mark.asyncio
 async def test_create_agent_api(client: AsyncClient, session):
-    # Use internal API key for authentication (the key from settings)
-    # Since we are in test environment, we need a valid key. Use a dummy and mock the secrets manager.
+    # Mock internal API key
     with patch.object(settings.secrets, 'get', return_value="test-internal-key"):
         headers = {"Authorization": f"Bearer test-internal-key"}
 
