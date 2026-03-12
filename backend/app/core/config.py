@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # File upload limits
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
+    # Scheduler flags (NEW)
+    SCHEDULER_ENABLED: bool = False
+    SCHEDULER_AUTO_ASSIGN: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -3,7 +3,7 @@ import { Agent, AgentStatus, Hive, UserAccount } from '../types';
 import { Icons } from '../constants';
 
 interface SidebarProps {
-  agents: Agent[];
+  agents: Agent[];                     // now active agents for the hive
   hives: Hive[];
   activeHiveId: string;
   onSelectHive: (id: string) => void;
@@ -126,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
-        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Active Bots</span>
+        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Active Agents</span>
         <div className="flex items-center gap-2">
           <button 
             onClick={onCreate}
@@ -136,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' 
                 : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/10'
             }`}
-            title="Spawn Bot"
+            title="Spawn Agent"
           >
             {isCreating ? (
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -222,6 +222,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="my-6 border-t border-zinc-800/50 mx-4"></div>
 
+        {agents.length === 0 && (
+          <p className="text-zinc-500 text-xs italic text-center py-4">No active agents for this hive.</p>
+        )}
         {agents.map(agent => (
           <div key={agent.id} className="flex items-center group">
             <button
@@ -243,12 +246,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               onClick={() => {
-                if (window.confirm(`Delete bot "${agent.name}"?`)) {
+                if (window.confirm(`Delete agent "${agent.name}"?`)) {
                   onDelete(agent.id);
                 }
               }}
               className="ml-2 p-2 text-zinc-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-              title="Delete Bot"
+              title="Delete Agent"
             >
               <Icons.Trash className="w-4 h-4" />
             </button>
@@ -259,7 +262,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-t border-zinc-800 bg-zinc-950/50 space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <div className="p-3 bg-zinc-900 rounded-xl border border-zinc-800 flex flex-col gap-1">
-            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Active Bots</span>
+            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Active Agents</span>
             <span className="text-xs font-mono text-emerald-400 font-bold">
               {agents.filter(a => a.status === AgentStatus.RUNNING).length} <span className="text-[8px] text-zinc-600">/ {agents.length}</span>
             </span>

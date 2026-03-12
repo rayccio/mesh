@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
 import json
 
-# Use relative import from parent package
-from ..main import (
+# Use absolute import from scheduler.main
+from scheduler.main import (
     populate_pending_tasks,
     populate_idle_agents,
     maintenance_loop,

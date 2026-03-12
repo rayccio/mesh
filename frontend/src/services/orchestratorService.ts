@@ -418,6 +418,15 @@ class OrchestratorService {
     if (!res.ok) throw new Error('Failed to remove global file');
   }
 
+  // ==================== NEW: HIVE ACTIVE AGENTS ====================
+  async getHiveActiveAgents(hiveId: string): Promise<Agent[]> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/active-agents`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch active agents');
+    return res.json();
+  }
+
   // ==================== SYSTEM ENDPOINTS ====================
 
   async getDefaultUid(): Promise<string> {

@@ -54,10 +54,23 @@ async def assign_task(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    # Check if task is still pending
+    if task.status != TaskStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Task is {task.status}, cannot assign")
+
+    # Perform assignment
     success = await task_manager.assign_task(task_id, agent_id)
     if not success:
         raise HTTPException(status_code=400, detail="Assignment failed")
 
+    # --- NEW: Remove from Redis pending queue if present ---
+    await redis_service.zrem("tasks:pending", task_id)
+    # Also remove agent from idle set? The agent will be set to ASSIGNED, but the idle set is managed by scheduler.
+    # We'll rely on the scheduler's maintenance loop to remove agent from idle set if it's still there,
+    # but to be clean, we can also remove it here.
+    await redis_service.srem("agents:idle", agent_id)
+
+    # Notify agent via Redis
     message = {
         "type": "task_assign",
         "task_id": task_id,

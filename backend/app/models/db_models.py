@@ -29,6 +29,7 @@ class TaskModel(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     data = Column(JSON, nullable=False)
+    required_skills = Column(JSON, default=[])   # NEW
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

@@ -43,6 +43,9 @@ const AppContent: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [creatingBotId, setCreatingBotId] = useState<string | null>(null);
   
+  // NEW: active agents for the current hive
+  const [activeAgents, setActiveAgents] = useState<Agent[]>([]);
+  
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({
     loginEnabled: false,
     sessionTimeout: 30,
@@ -154,6 +157,17 @@ const AppContent: React.FC = () => {
     loadInitialData();
   }, [user, refreshProviders]);
 
+  // NEW: Fetch active agents when hive changes
+  useEffect(() => {
+    if (activeHiveId) {
+      orchestratorService.getHiveActiveAgents(activeHiveId)
+        .then(setActiveAgents)
+        .catch(err => console.warn('Could not fetch active agents', err));
+    } else {
+      setActiveAgents([]);
+    }
+  }, [activeHiveId]);
+
   useEffect(() => {
     if (activeHiveId) {
       localStorage.setItem('hivebot_active_hive', activeHiveId);
@@ -202,14 +216,14 @@ const AppContent: React.FC = () => {
     hives.find(h => h.id === activeHiveId) || hives[0]
   , [hives, activeHiveId]);
 
-  const agents = activeHive?.agents || [];
+  const hiveAgents = activeHive?.agents || []; // still available but will be empty after migration
   const globalUserMd = activeHive?.globalUserMd || INITIAL_USER_MD;
   const messages = activeHive?.messages || [];
   const globalFiles = activeHive?.globalFiles || [];
 
   const selectedAgent = useMemo(() => 
-    agents.find(a => a.id === selectedAgentId) || null
-  , [agents, selectedAgentId]);
+    (activeAgents.find(a => a.id === selectedAgentId) || hiveAgents.find(a => a.id === selectedAgentId)) || null
+  , [activeAgents, hiveAgents, selectedAgentId]);
 
   const updateHive = async (hiveId: string, updates: HiveUpdate) => {
     try {
@@ -231,6 +245,8 @@ const AppContent: React.FC = () => {
           ? { ...h, agents: h.agents.map(a => a.id === updated.id ? result : a) }
           : h
       ));
+      // Also update activeAgents if present
+      setActiveAgents(prev => prev.map(a => a.id === updated.id ? result : a));
     } catch (err) {
       console.error('Update failed', err);
     }
@@ -265,7 +281,7 @@ const AppContent: React.FC = () => {
           use_custom_max_tokens: false,
         },
         reportingTarget: ReportingTarget.PARENT,
-        parentId: agents.length > 0 ? agents[0].id : undefined,
+        parentId: hiveAgents.length > 0 ? hiveAgents[0].id : undefined,
         userUid: globalSettings.defaultAgentUid,
         channels: [],
       };
@@ -302,6 +318,7 @@ const AppContent: React.FC = () => {
           ? { ...h, agents: h.agents.filter(a => a.id !== agentId) }
           : h
       ));
+      setActiveAgents(prev => prev.filter(a => a.id !== agentId));
       if (selectedAgentId === agentId) {
         setSelectedAgentId(null);
         setView('cluster');
@@ -361,6 +378,7 @@ const AppContent: React.FC = () => {
             }
           : h
       ));
+      setActiveAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: AgentStatus.RUNNING } : a));
       
       addLog(agentId, `Initiating Hive Cycle...`, 'internal');
       
@@ -377,6 +395,7 @@ const AppContent: React.FC = () => {
             }
           : h
       ));
+      setActiveAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: AgentStatus.ERROR } : a));
     }
   };
 
@@ -548,7 +567,7 @@ const AppContent: React.FC = () => {
         
         <div className={`fixed lg:relative inset-y-0 left-0 z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <Sidebar 
-            agents={agents} 
+            agents={activeAgents}          // pass active agents to sidebar
             hives={hives}
             activeHiveId={activeHiveId || ''}
             onSelectHive={handleSelectHive}
@@ -665,7 +684,7 @@ const AppContent: React.FC = () => {
                 hive={activeHive} 
                 onNavigateToNodes={() => setView('cluster')} 
                 onRunAgent={runAgent}
-                agents={agents}
+                agents={hiveAgents}   // use hive agents for dashboard (may be empty after migration)
               />
             )}
 
@@ -678,7 +697,7 @@ const AppContent: React.FC = () => {
             )}
 
             {view === 'plan' && activeHive && (
-              <PlanView hiveId={activeHive.id} agents={agents} />
+              <PlanView hiveId={activeHive.id} agents={activeAgents} />
             )}
 
             {view === 'team' && activeHive && (
@@ -785,7 +804,7 @@ const AppContent: React.FC = () => {
                     onRun={() => runAgent(selectedAgent.id)}
                     onDelete={handleDeleteAgent}
                     messages={messages.filter(m => m.from === selectedAgent.id)}
-                    allAgents={agents}
+                    allAgents={activeAgents}
                     globalFiles={globalFiles}
                   />
                 )
@@ -799,7 +818,7 @@ const AppContent: React.FC = () => {
                   <p className="text-zinc-500 text-lg">Active mesh topology and bot status.</p>
                 </div>
                 <AgentGrid 
-                  agents={agents} 
+                  agents={activeAgents} 
                   onSelect={(id) => { 
                     setSelectedAgentId(id); 
                     setView('agent'); 

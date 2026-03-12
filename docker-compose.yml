@@ -62,6 +62,8 @@ services:
       - POSTGRES_DB=hivebot
       - HIVEBOT_DATA=/app/data
       - DOCKER_NETWORK=hivebot_network
+      - SCHEDULER_ENABLED=true
+      - SCHEDULER_AUTO_ASSIGN=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./agents:/app/data/agents
@@ -101,7 +103,7 @@ services:
       - POSTGRES_DB=hivebot
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ORCHESTRATOR_URL=http://backend:8000
-      - SIMULATOR_URL=http://simulator:8080   # new
+      - SIMULATOR_URL=http://simulator:8080
     volumes:
       - ./agents:/app/data/agents
     networks:
@@ -151,6 +153,31 @@ services:
       - SIMULATOR_URL=http://simulator:8080
     networks:
       - hivebot_network
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/scheduler.Dockerfile
+    image: hivebot/scheduler:latest
+    container_name: hivebot_scheduler
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_DSN=postgresql://hivebot:hivebot@postgres/hivebot
+      - SCHEDULER_ENABLED=true
+      - SCHEDULER_AUTO_ASSIGN=true
+    networks:
+      - hivebot_network
+    ports:
+      - "8087:8087"   # health endpoint
 
   frontend:
     build:

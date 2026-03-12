@@ -97,7 +97,7 @@ async def list_hive_agents(
     hive_id: str,
     manager: HiveManager = Depends(get_hive_manager)
 ):
-    """List all agents in a hive"""
+    """List all agents in a hive (deprecated – will be empty after migration)"""
     hive = await manager.get_hive(hive_id)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive not found")
@@ -109,7 +109,7 @@ async def add_agent_to_hive(
     agent: Agent,
     manager: HiveManager = Depends(get_hive_manager)
 ):
-    """Add an agent to a hive"""
+    """Add an agent to a hive (deprecated)"""
     hive = await manager.add_agent(hive_id, agent)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive not found")
@@ -122,7 +122,7 @@ async def update_hive_agent(
     agent_update: Agent,
     manager: HiveManager = Depends(get_hive_manager)
 ):
-    """Update an agent in a hive"""
+    """Update an agent in a hive (deprecated)"""
     hive = await manager.update_agent(hive_id, agent_id, agent_update)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive or agent not found")
@@ -134,10 +134,22 @@ async def remove_agent_from_hive(
     agent_id: str,
     manager: HiveManager = Depends(get_hive_manager)
 ):
-    """Remove an agent from a hive"""
+    """Remove an agent from a hive (deprecated)"""
     hive = await manager.remove_agent(hive_id, agent_id)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive or agent not found")
+
+# --- NEW: Get agents currently executing tasks for this hive ---
+@router.get("/{hive_id}/active-agents", response_model=List[Agent])
+async def get_hive_active_agents(
+    hive_id: str,
+    manager: HiveManager = Depends(get_hive_manager)
+):
+    """Get agents currently executing tasks for this hive."""
+    hive = await manager.get_hive(hive_id)
+    if not hive:
+        raise HTTPException(status_code=404, detail="Hive not found")
+    return await manager.get_active_agents(hive_id)
 
 # Message endpoints
 @router.get("/{hive_id}/messages", response_model=List[Message])

@@ -14,7 +14,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ hiveId, agents }) => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [edges, setEdges] = useState<any[]>([]);
   const [goalId, setGoalId] = useState<string | null>(null);
-  const [assigning, setAssigning] = useState<{ [key: string]: boolean }>({});
+  // Removed assignment state
 
   const handlePlan = async () => {
     if (!goal.trim()) return;
@@ -32,25 +32,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ hiveId, agents }) => {
     }
   };
 
-  const handleAssign = async (taskId: string, agentId: string) => {
-    setAssigning(prev => ({ ...prev, [taskId]: true }));
-    try {
-      await orchestratorService.assignTask(hiveId, taskId, agentId);
-      // Update task status locally
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'assigned', assigned_agent_id: agentId } : t));
-    } catch (err) {
-      console.error('Assignment failed', err);
-      alert('Assignment failed');
-    } finally {
-      setAssigning(prev => ({ ...prev, [taskId]: false }));
-    }
-  };
+  // No handleAssign function anymore
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="space-y-2">
         <h2 className="text-3xl font-black tracking-tighter">Hive Plan</h2>
-        <p className="text-zinc-500">Decompose a goal into tasks and assign them to bots.</p>
+        <p className="text-zinc-500">Decompose a goal into tasks – assignments are automatic.</p>
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
@@ -100,26 +88,14 @@ export const PlanView: React.FC<PlanViewProps> = ({ hiveId, agents }) => {
                   </div>
                   <div className="text-xs text-zinc-500 mt-1">
                     ID: {task.id} | Status: {task.status}
+                    {task.assigned_agent_id && (
+                      <span className="ml-2 text-emerald-400">
+                        Assigned to {agents.find(a => a.id === task.assigned_agent_id)?.name || task.assigned_agent_id}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {!task.assigned_agent_id && task.status === 'pending' && (
-                    <select
-                      onChange={(e) => handleAssign(task.id, e.target.value)}
-                      disabled={assigning[task.id]}
-                      value=""
-                      className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1 text-xs text-zinc-200"
-                    >
-                      <option value="">Assign to...</option>
-                      {agents.map(a => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {task.assigned_agent_id && (
-                    <span className="text-xs text-emerald-400">Assigned to {agents.find(a => a.id === task.assigned_agent_id)?.name || task.assigned_agent_id}</span>
-                  )}
-                </div>
+                {/* No dropdown – assignments are automatic */}
               </div>
             ))}
           </div>
