@@ -79,7 +79,7 @@ async def get_performance_stats(
             )
             AND (data->>'created_at')::timestamptz >= :since
         """),
-        {"since": since.isoformat()}
+        {"since": since}  # Pass datetime object, not string
     )
     test_row = test_result.fetchone()
     test_total = test_row[0] or 0
@@ -98,7 +98,7 @@ async def get_performance_stats(
             )
             AND (data->>'created_at')::timestamptz >= :since
         """),
-        {"since": since.isoformat()}
+        {"since": since}  # Pass datetime object, not string
     )
     prod_row = prod_result.fetchone()
     prod_total = prod_row[0] or 0
@@ -134,7 +134,7 @@ async def get_agent_metrics(
             AND (data->>'created_at')::timestamptz >= :since
             ORDER BY (data->>'created_at')::timestamptz DESC
         """),
-        {"agent_id": agent_id, "since": since.isoformat()}
+        {"agent_id": agent_id, "since": since}  # Pass datetime object, not string
     )
     tasks = [json.loads(r[0]) for r in result.fetchall()]
     
