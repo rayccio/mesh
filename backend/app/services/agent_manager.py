@@ -138,10 +138,8 @@ class AgentManager:
             status = self.docker.get_container_status(agent.container_id)
             agent.status = self._map_docker_status(status)
 
-        if agent:
-            from .skill_manager import SkillManager
-            skill_manager = SkillManager()
-            agent.skills = await skill_manager.get_agent_skills(agent_id)
+        # REMOVED: agent.skills = await skill_manager.get_agent_skills(agent_id)
+        # Skills are already stored in agent.skills from the DB
 
         return agent
 
@@ -161,8 +159,6 @@ class AgentManager:
                     agent.status = AgentStatus.OFFLINE
             else:
                 # worker-based agent: status is stored in DB (updated by worker)
-                # The status from the database is already set in agent.status (from the JSON data)
-                # No need to change it; it reflects the last known state.
                 pass
             self.cache[agent.id] = agent
 
