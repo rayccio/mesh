@@ -62,7 +62,6 @@ async def test_assign_task_non_pending_fails():
     mock_task_manager.get_task.return_value = task
     mock_agent_manager.get_agent.return_value = agent
 
-    # Patch publish as AsyncMock to avoid TypeError if reached (though it shouldn't be)
     with patch('app.api.v1.endpoints.tasks.redis_service.publish', new_callable=AsyncMock) as mock_publish:
         with pytest.raises(HTTPException) as excinfo:
             await assign_task(
@@ -76,4 +75,4 @@ async def test_assign_task_non_pending_fails():
         assert "Task is assigned, cannot assign" in str(excinfo.value.detail)
 
     mock_task_manager.assign_task.assert_not_called()
-    mock_publish.assert_not_called()  # Ensure publish was not attempted
+    mock_publish.assert_not_called()

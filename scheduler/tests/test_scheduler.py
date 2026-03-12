@@ -17,10 +17,18 @@ async def test_populate_pending_tasks():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    mock_pg.acquire.return_value.__aenter__.return_value.fetch = AsyncMock(return_value=[
+    # Create a mock connection that will be returned by the context manager
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[
         {'id': 'task1', 'created_at': datetime(2025, 1, 1, 12, 0, 0)},
         {'id': 'task2', 'created_at': datetime(2025, 1, 1, 12, 5, 0)},
     ])
+
+    # Make pg_pool.acquire return an async context manager
+    mock_acquire = AsyncMock()
+    mock_acquire.__aenter__.return_value = mock_conn
+    mock_acquire.__aexit__.return_value = None
+    mock_pg.acquire.return_value = mock_acquire
 
     await populate_pending_tasks(mock_pg, mock_redis)
 
@@ -33,10 +41,16 @@ async def test_populate_idle_agents():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    mock_pg.acquire.return_value.__aenter__.return_value.fetch = AsyncMock(return_value=[
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[
         {'id': 'agent1'},
         {'id': 'agent2'},
     ])
+
+    mock_acquire = AsyncMock()
+    mock_acquire.__aenter__.return_value = mock_conn
+    mock_acquire.__aexit__.return_value = None
+    mock_pg.acquire.return_value = mock_acquire
 
     await populate_idle_agents(mock_pg, mock_redis)
 
@@ -57,7 +71,14 @@ async def test_maintenance_loop_removes_non_pending():
         elif task_id == "task2":
             return "pending"
         return None
-    mock_pg.acquire.return_value.__aenter__.return_value.fetchval = mock_fetchval
+
+    mock_conn = AsyncMock()
+    mock_conn.fetchval = mock_fetchval
+
+    mock_acquire = AsyncMock()
+    mock_acquire.__aenter__.return_value = mock_conn
+    mock_acquire.__aexit__.return_value = None
+    mock_pg.acquire.return_value = mock_acquire
 
     task = asyncio.create_task(maintenance_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
@@ -83,6 +104,7 @@ async def test_assignment_loop_matches_and_assigns():
         'goal_id': 'goal1',
         'hive_id': 'hive1'
     }
+
     async def mock_fetchrow(query, task_id):
         if task_id == "task1":
             return {
@@ -90,20 +112,28 @@ async def test_assignment_loop_matches_and_assigns():
                 'required_skills': ['skill1']
             }
         return None
-    mock_pg.acquire.return_value.__aenter__.return_value.fetchrow = mock_fetchrow
+
+    mock_conn = AsyncMock()
+    mock_conn.fetchrow = mock_fetchrow
 
     mock_redis.smembers = AsyncMock(return_value={"agent1", "agent2"})
 
     agent1_data = {'skills': [{'skillId': 'skill1'}]}
     agent2_data = {'skills': [{'skillId': 'skill2'}]}
+
     async def mock_fetch(query, agent_ids):
         return [
             {'id': 'agent1', 'data': json.dumps(agent1_data)},
             {'id': 'agent2', 'data': json.dumps(agent2_data)},
         ]
-    mock_pg.acquire.return_value.__aenter__.return_value.fetch = mock_fetch
+    mock_conn.fetch = mock_fetch
+    mock_conn.execute = AsyncMock()
 
-    mock_pg.acquire.return_value.__aenter__.return_value.execute = AsyncMock()
+    mock_acquire = AsyncMock()
+    mock_acquire.__aenter__.return_value = mock_conn
+    mock_acquire.__aexit__.return_value = None
+    mock_pg.acquire.return_value = mock_acquire
+
     mock_redis.publish = AsyncMock()
 
     task = asyncio.create_task(assignment_loop(mock_pg, mock_redis))
