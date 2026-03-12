@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  test-backend:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -48,7 +48,6 @@ jobs:
     - name: Run tests
       run: |
         cd backend
-        # Add backend directory to Python path so 'app' can be imported
         export PYTHONPATH=$PWD:$PYTHONPATH
         pytest tests/ -v
       env:
@@ -59,3 +58,91 @@ jobs:
         REDIS_HOST: localhost
         REDIS_PORT: 6379
         INTERNAL_API_KEY: test-key
+
+  test-scheduler:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: hivebot
+          POSTGRES_PASSWORD: hivebot
+          POSTGRES_DB: hivebot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        cd scheduler
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+    - name: Run tests
+      run: |
+        cd scheduler
+        export PYTHONPATH=$PWD:$PYTHONPATH
+        pytest tests/ -v
+
+  test-worker:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: hivebot
+          POSTGRES_PASSWORD: hivebot
+          POSTGRES_DB: hivebot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        cd worker
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+    - name: Run tests
+      run: |
+        cd worker
+        export PYTHONPATH=$PWD:$PYTHONPATH
+        pytest tests/ -v
