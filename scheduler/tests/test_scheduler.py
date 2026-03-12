@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 import json
 
@@ -17,19 +17,17 @@ async def test_populate_pending_tasks():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    # Create a mock connection that will be the return value of the async context manager
     mock_conn = AsyncMock()
     mock_conn.fetch = AsyncMock(return_value=[
         {'id': 'task1', 'created_at': datetime(2025, 1, 1, 12, 0, 0)},
         {'id': 'task2', 'created_at': datetime(2025, 1, 1, 12, 5, 0)},
     ])
 
-    # Make pg_pool.acquire return an async context manager that yields mock_conn
-    # We need an object with __aenter__ and __aexit__ methods
+    # Fix: Use MagicMock for acquire so it returns the context manager immediately
     mock_acquire = AsyncMock()
     mock_acquire.__aenter__.return_value = mock_conn
     mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = MagicMock(return_value=mock_acquire)
 
     await populate_pending_tasks(mock_pg, mock_redis)
 
@@ -51,7 +49,7 @@ async def test_populate_idle_agents():
     mock_acquire = AsyncMock()
     mock_acquire.__aenter__.return_value = mock_conn
     mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = MagicMock(return_value=mock_acquire)
 
     await populate_idle_agents(mock_pg, mock_redis)
 
@@ -79,7 +77,7 @@ async def test_maintenance_loop_removes_non_pending():
     mock_acquire = AsyncMock()
     mock_acquire.__aenter__.return_value = mock_conn
     mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = MagicMock(return_value=mock_acquire)
 
     task = asyncio.create_task(maintenance_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
@@ -133,7 +131,7 @@ async def test_assignment_loop_matches_and_assigns():
     mock_acquire = AsyncMock()
     mock_acquire.__aenter__.return_value = mock_conn
     mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = MagicMock(return_value=mock_acquire)
 
     mock_redis.publish = AsyncMock()
 
