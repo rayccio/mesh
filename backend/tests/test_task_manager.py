@@ -19,4 +19,4 @@ async def test_create_task_graph(session):
     graph = await task_manager.create_task_graph("h-test", "Test goal", tasks, edges)
     assert graph.goal_id.startswith("g-")
     assert graph.goal_description == "Test goal"
-    # Clean up (task_manager doesn't have delete; tasks will be rolled back by session)
+    # No explicit cleanup needed; session rollback will discard

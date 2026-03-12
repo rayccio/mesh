@@ -46,6 +46,12 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
         # Roll back any uncommitted changes
         await session.rollback()
 
+# Autouse fixture to patch settings.secrets.get globally for all tests
+@pytest.fixture(autouse=True)
+def patch_settings():
+    with patch.object(settings.secrets, 'get', side_effect=lambda key, default=None: 'test-internal-key' if key == 'INTERNAL_API_KEY' else default):
+        yield
+
 @pytest.fixture
 async def client(session) -> AsyncGenerator:
     # Override dependency to use test session
@@ -54,22 +60,20 @@ async def client(session) -> AsyncGenerator:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Patch settings.secrets.get to return test internal key
-    with patch.object(settings.secrets, 'get', side_effect=lambda key, default=None: 'test-internal-key' if key == 'INTERNAL_API_KEY' else default):
-        # Mock Redis to avoid needing a real Redis instance in tests
-        redis_mock = AsyncMock()
-        redis_mock.ping = AsyncMock(return_value=True)
-        redis_mock.publish = AsyncMock()
-        redis_mock.get = AsyncMock(return_value=None)
-        redis_mock.set = AsyncMock()
-        redis_mock.delete = AsyncMock()
-        redis_mock.client = redis_mock  # for direct attribute access
+    # Mock Redis to avoid needing a real Redis instance in tests
+    redis_mock = AsyncMock()
+    redis_mock.ping = AsyncMock(return_value=True)
+    redis_mock.publish = AsyncMock()
+    redis_mock.get = AsyncMock(return_value=None)
+    redis_mock.set = AsyncMock()
+    redis_mock.delete = AsyncMock()
+    redis_mock.client = redis_mock  # for direct attribute access
 
-        # Patch the redis_service.client
-        with patch.object(redis_service, 'client', redis_mock):
-            # Use ASGITransport to mount the FastAPI app
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as ac:
-                yield ac
+    # Patch the redis_service.client
+    with patch.object(redis_service, 'client', redis_mock):
+        # Use ASGITransport to mount the FastAPI app
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
 
     app.dependency_overrides.clear()
