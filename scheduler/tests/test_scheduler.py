@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 import json
 
-# Use absolute import from scheduler.main
+# Use absolute import
 from scheduler.main import (
     populate_pending_tasks,
     populate_idle_agents,
@@ -23,7 +23,6 @@ async def test_populate_pending_tasks():
         {'id': 'task2', 'created_at': datetime(2025, 1, 1, 12, 5, 0)},
     ])
 
-    # Fix: Use MagicMock for acquire so it returns the context manager immediately
     mock_acquire = AsyncMock()
     mock_acquire.__aenter__.return_value = mock_conn
     mock_acquire.__aexit__.return_value = None
