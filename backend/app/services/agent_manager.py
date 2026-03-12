@@ -138,10 +138,7 @@ class AgentManager:
             status = self.docker.get_container_status(agent.container_id)
             agent.status = self._map_docker_status(status)
 
-        if agent:
-            from .skill_manager import SkillManager
-            skill_manager = SkillManager()
-            agent.skills = await skill_manager.get_agent_skills(agent_id)
+        # ⚠️ Removed circular call to SkillManager.get_agent_skills (skills are already loaded from DB)
 
         return agent
 
