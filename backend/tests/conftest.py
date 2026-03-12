@@ -29,7 +29,7 @@ def event_loop() -> Generator:
     yield loop
     loop.close()
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")   # <-- FIXED: was "session", now "function"
 async def engine():
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     async with engine.begin() as conn:

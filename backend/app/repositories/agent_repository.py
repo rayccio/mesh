@@ -15,7 +15,7 @@ class AgentRepository:
             id=agent.id,
             data=data,
             container_id=agent.container_id,
-            status=agent.status.value
+            status=agent.status   # <-- FIXED: removed .value
         )
         self.db.add(db_agent)
         await self.db.commit()
@@ -47,7 +47,7 @@ class AgentRepository:
         await self.db.execute(
             update(AgentModel)
             .where(AgentModel.id == agent_id)
-            .values(data=data, status=agent.status.value)
+            .values(data=data, status=agent.status)   # <-- FIXED: removed .value
         )
         await self.db.commit()
         return agent
