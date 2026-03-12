@@ -1,33 +1,38 @@
 import pytest
 from httpx import AsyncClient
+from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget
 from app.core.config import settings
+from app.services.redis_service import redis_service
+from unittest.mock import patch
 
 @pytest.mark.asyncio
 async def test_create_agent_api(client: AsyncClient, session):
-    # Use internal API key for authentication
-    headers = {"Authorization": f"Bearer {settings.secrets.get('INTERNAL_API_KEY')}"}
-    
-    agent_in = {
-        "name": "API Test Agent",
-        "role": "Worker",
-        "soulMd": "test soul",
-        "identityMd": "test identity",
-        "toolsMd": "test tools",
-        "reasoning": {
-            "model": "openai/gpt-4o",
-            "temperature": 0.7,
-            "topP": 1.0,
-            "maxTokens": 150,
-            "use_global_default": True,
-            "use_custom_max_tokens": False
-        },
-        "reportingTarget": "PARENT_AGENT"
-    }
-    response = await client.post("/api/v1/agents", json=agent_in, headers=headers)
-    assert response.status_code == 201
-    data = response.json()
-    assert data["name"] == "API Test Agent"
-    agent_id = data["id"]
-    
-    # Clean up
-    await client.delete(f"/api/v1/agents/{agent_id}", headers=headers)
+    # Use internal API key for authentication (the key from settings)
+    # Since we are in test environment, we need a valid key. Use a dummy and mock the secrets manager.
+    with patch.object(settings.secrets, 'get', return_value="test-internal-key"):
+        headers = {"Authorization": f"Bearer test-internal-key"}
+
+        agent_in = {
+            "name": "API Test Agent",
+            "role": "Worker",
+            "soulMd": "test soul",
+            "identityMd": "test identity",
+            "toolsMd": "test tools",
+            "reasoning": {
+                "model": "openai/gpt-4o",
+                "temperature": 0.7,
+                "topP": 1.0,
+                "maxTokens": 150,
+                "use_global_default": True,
+                "use_custom_max_tokens": False
+            },
+            "reportingTarget": "PARENT_AGENT"
+        }
+        response = await client.post("/api/v1/agents", json=agent_in, headers=headers)
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "API Test Agent"
+        agent_id = data["id"]
+
+        # Clean up
+        await client.delete(f"/api/v1/agents/{agent_id}", headers=headers)

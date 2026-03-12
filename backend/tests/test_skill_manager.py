@@ -15,4 +15,5 @@ async def test_create_skill(session):
     skill = await skill_manager.create_skill(skill_in)
     assert skill.id.startswith("sk-")
     assert skill.name == "Test Skill"
+    # Clean up
     await skill_manager.delete_skill(skill.id)

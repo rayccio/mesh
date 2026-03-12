@@ -1,12 +1,14 @@
 import pytest
+from datetime import datetime
 from app.services.hive_manager import HiveManager
+from app.models.types import HiveCreate
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
-from app.models.types import HiveCreate
+from unittest.mock import Mock
 
 @pytest.mark.asyncio
 async def test_create_hive(session):
-    docker = DockerService()
+    docker = Mock(spec=DockerService)
     agent_manager = AgentManager(docker)
     hive_manager = HiveManager(agent_manager)
     hive_in = HiveCreate(name="Test Hive", description="Test Description", global_user_md="")

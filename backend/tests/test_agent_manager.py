@@ -4,6 +4,7 @@ from datetime import datetime
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
 from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget
+from app.services.redis_service import redis_service
 
 @pytest.mark.asyncio
 async def test_create_agent(session):
@@ -21,6 +22,7 @@ async def test_create_agent(session):
     agent = await agent_manager.create_agent(agent_in)
     assert agent.id.startswith("b-")
     assert agent.name == "Test Agent"
-    # Clean up (agent_manager.delete_agent would call docker, but we mock)
-    # We'll just delete from DB
-    await agent_manager.delete_agent(agent.id)
+
+    # Clean up
+    with patch.object(redis_service, 'client', Mock()):  # avoid Redis calls
+        await agent_manager.delete_agent(agent.id)

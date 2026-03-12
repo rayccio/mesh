@@ -10,7 +10,7 @@ class SkillVersionRepository:
         self.db = db
 
     async def create(self, version: SkillVersion) -> SkillVersion:
-        data = prepare_json_data(version.dict(by_alias=True))
+        data = prepare_json_data(version.model_dump(by_alias=True))
         db_version = SkillVersionModel(
             id=version.id,
             skill_id=version.skill_id,
@@ -41,10 +41,7 @@ class SkillVersionRepository:
         version = await self.get(version_id)
         if not version:
             return None
-        for k, v in updates.items():
-            if hasattr(version, k):
-                setattr(version, k, v)
-        data = prepare_json_data(version.dict(by_alias=True))
+        data = prepare_json_data(updates)
         await self.db.execute(
             update(SkillVersionModel)
             .where(SkillVersionModel.id == version_id)

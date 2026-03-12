@@ -1,54 +1,28 @@
 import pytest
 import asyncio
-import os
-import tempfile
-from unittest.mock import patch, MagicMock
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from httpx import AsyncClient, ASGITransport
+from sqlalchemy import text
+from httpx import AsyncClient
 from typing import AsyncGenerator, Generator
+from unittest.mock import AsyncMock, patch
 
-# Set HIVEBOT_DATA to a temporary directory before importing app modules
-temp_data_dir = tempfile.mkdtemp()
-os.environ["HIVEBOT_DATA"] = temp_data_dir
-os.environ["POSTGRES_HOST"] = "localhost"
-os.environ["POSTGRES_USER"] = "hivebot"
-os.environ["POSTGRES_PASSWORD"] = "hivebot"
-os.environ["POSTGRES_DB"] = "hivebot_test"
-os.environ["REDIS_HOST"] = "localhost"
-os.environ["REDIS_PORT"] = "6379"
-os.environ["INTERNAL_API_KEY"] = "test-key"
-
-# Now import app modules after setting env vars
 from app.core.database import Base, get_db
 from app.main import app
 from app.core.config import settings
-from app.core.secrets import SecretsManager
+from app.services.redis_service import redis_service
 
-# Mock the secrets manager to avoid file access and return the test key
-mock_secrets = MagicMock(spec=SecretsManager)
-mock_secrets.get.return_value = "test-key"  # for INTERNAL_API_KEY
-mock_secrets.set.return_value = None
-
-# Patch the settings._secrets attribute
-@pytest.fixture(autouse=True)
-def patch_secrets():
-    with patch.object(settings, '_secrets', mock_secrets):
-        yield
-
-# Use the test database URL (already set via env vars)
-TEST_DATABASE_URL = f"postgresql+asyncpg://{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}@{os.environ['POSTGRES_HOST']}/{os.environ['POSTGRES_DB']}"
+# Use a separate test database
+TEST_DATABASE_URL = "postgresql+asyncpg://hivebot:hivebot@localhost/hivebot_test"
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator:
-    """Create a new event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 @pytest.fixture(scope="session")
 async def engine():
-    """Create a SQLAlchemy engine for the test database."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -58,35 +32,32 @@ async def engine():
 
 @pytest.fixture
 async def session(engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create a new database session for each test."""
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
-        # Rollback any uncommitted changes and close the session
+        # Roll back any uncommitted changes
         await session.rollback()
-        await session.close()
 
 @pytest.fixture
 async def client(session) -> AsyncGenerator:
-    """Create an HTTP client for testing the FastAPI app."""
     # Override dependency to use test session
     async def override_get_db():
         yield session
-    app.dependency_overrides[get_db] = override_get_db
-    
-    # Use ASGITransport to pass the FastAPI app to httpx
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    
-    app.dependency_overrides.clear()
 
-@pytest.fixture
-async def redis_client():
-    """Create a test Redis client."""
-    import redis.asyncio as redis
-    client = await redis.from_url("redis://localhost:6379/1", decode_responses=True)
-    await client.flushdb()
-    yield client
-    await client.flushdb()
-    await client.close()
+    app.dependency_overrides[get_db] = override_get_db
+
+    # Mock Redis to avoid needing a real Redis instance in tests
+    redis_mock = AsyncMock()
+    redis_mock.ping = AsyncMock(return_value=True)
+    redis_mock.publish = AsyncMock()
+    redis_mock.get = AsyncMock(return_value=None)
+    redis_mock.set = AsyncMock()
+    redis_mock.delete = AsyncMock()
+    redis_mock.client = redis_mock  # for direct attribute access
+
+    # Patch the redis_service.client
+    with patch.object(redis_service, 'client', redis_mock):
+        async with AsyncClient(app=app, base_url="http://test") as ac:
+            yield ac
+
+    app.dependency_overrides.clear()

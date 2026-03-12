@@ -10,7 +10,7 @@ class HiveRepository:
         self.db = db
 
     async def create(self, hive: Hive) -> Hive:
-        data = prepare_json_data(hive.dict(by_alias=True))
+        data = prepare_json_data(hive.model_dump(by_alias=True))
         db_hive = HiveModel(
             id=hive.id,
             data=data
@@ -38,10 +38,9 @@ class HiveRepository:
         hive = await self.get(hive_id)
         if not hive:
             return None
-        for k, v in updates.items():
-            if hasattr(hive, k):
-                setattr(hive, k, v)
-        data = prepare_json_data(hive.dict(by_alias=True))
+        # updates is a dict of fields to change (usually the whole model data)
+        # We'll replace the entire data with the new dict
+        data = prepare_json_data(updates)
         await self.db.execute(
             update(HiveModel)
             .where(HiveModel.id == hive_id)
@@ -49,10 +48,3 @@ class HiveRepository:
         )
         await self.db.commit()
         return hive
-
-    async def delete(self, hive_id: str) -> bool:
-        result = await self.db.execute(
-            delete(HiveModel).where(HiveModel.id == hive_id)
-        )
-        await self.db.commit()
-        return result.rowcount > 0

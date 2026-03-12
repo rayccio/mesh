@@ -10,7 +10,7 @@ class TaskRepository:
         self.db = db
 
     async def create(self, task: Task) -> Task:
-        data = prepare_json_data(task.dict(by_alias=True))
+        data = prepare_json_data(task.model_dump(by_alias=True))
         db_task = TaskModel(
             id=task.id,
             data=data
@@ -38,10 +38,7 @@ class TaskRepository:
         task = await self.get(task_id)
         if not task:
             return None
-        for k, v in updates.items():
-            if hasattr(task, k):
-                setattr(task, k, v)
-        data = prepare_json_data(task.dict(by_alias=True))
+        data = prepare_json_data(updates)
         await self.db.execute(
             update(TaskModel)
             .where(TaskModel.id == task_id)

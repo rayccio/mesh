@@ -138,8 +138,10 @@ class AgentManager:
             status = self.docker.get_container_status(agent.container_id)
             agent.status = self._map_docker_status(status)
 
-        # REMOVED: agent.skills = await skill_manager.get_agent_skills(agent_id)
-        # Skills are already stored in agent.skills from the DB
+        if agent:
+            from .skill_manager import SkillManager
+            skill_manager = SkillManager()
+            agent.skills = await skill_manager.get_agent_skills(agent_id)
 
         return agent
 
@@ -173,7 +175,7 @@ class AgentManager:
         if not agent:
             return None
 
-        update_data = agent_update.dict(exclude_unset=True, by_alias=False)
+        update_data = agent_update.model_dump(exclude_unset=True, by_alias=False)
 
         old_enabled_channels = {ch.id: ch for ch in agent.channels if ch.enabled}
         old_types = {ch.type for ch in agent.channels if ch.enabled}
@@ -189,7 +191,7 @@ class AgentManager:
                 setattr(agent, field, converted)
             elif field == "meta" and value is not None:
                 if isinstance(value, dict):
-                    current_meta = agent.meta.dict() if agent.meta else {}
+                    current_meta = agent.meta.model_dump() if agent.meta else {}
                     current_meta.update(value)
                     agent.meta = MetaInfo(**current_meta)
                 else:
@@ -224,7 +226,7 @@ class AgentManager:
 
         repo, session = await self._get_repo()
         try:
-            updated = await repo.update(agent_id, agent.dict(by_alias=True))
+            updated = await repo.update(agent_id, agent.model_dump(by_alias=True))
         finally:
             await session.close()
 
@@ -281,7 +283,7 @@ class AgentManager:
         message = {
             "type": "think",
             "input": input_text,
-            "config": agent.reasoning.dict(),
+            "config": agent.reasoning.model_dump(),
             "timestamp": datetime.utcnow().isoformat(),
             "simulation": simulation
         }

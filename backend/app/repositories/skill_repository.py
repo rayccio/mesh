@@ -10,7 +10,7 @@ class SkillRepository:
         self.db = db
 
     async def create(self, skill: Skill) -> Skill:
-        data = prepare_json_data(skill.dict(by_alias=True))
+        data = prepare_json_data(skill.model_dump(by_alias=True))
         db_skill = SkillModel(
             id=skill.id,
             data=data
@@ -38,10 +38,8 @@ class SkillRepository:
         skill = await self.get(skill_id)
         if not skill:
             return None
-        for k, v in updates.items():
-            if hasattr(skill, k):
-                setattr(skill, k, v)
-        data = prepare_json_data(skill.dict(by_alias=True))
+        # updates is the new data dictionary (already prepared by service)
+        data = prepare_json_data(updates)
         await self.db.execute(
             update(SkillModel)
             .where(SkillModel.id == skill_id)

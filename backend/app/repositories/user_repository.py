@@ -10,8 +10,7 @@ class UserRepository:
         self.db = db
 
     async def create(self, user: UserAccount) -> UserAccount:
-        # Convert datetime fields to strings
-        data = prepare_json_data(user.dict(by_alias=True))
+        data = prepare_json_data(user.model_dump(by_alias=True))
         db_user = UserModel(
             id=user.id,
             data=data
@@ -48,12 +47,7 @@ class UserRepository:
         user = await self.get(user_id)
         if not user:
             return None
-        # Apply updates to the user object
-        for k, v in updates.items():
-            if hasattr(user, k):
-                setattr(user, k, v)
-        # Prepare data for storage
-        data = prepare_json_data(user.dict(by_alias=True))
+        data = prepare_json_data(updates)
         await self.db.execute(
             update(UserModel)
             .where(UserModel.id == user_id)
