@@ -233,13 +233,26 @@ const AppContent: React.FC = () => {
     (activeAgents.find(a => a.id === selectedAgentId) || hiveAgents.find(a => a.id === selectedAgentId)) || null
   , [activeAgents, hiveAgents, selectedAgentId]);
 
+  // --- FIXED: optimistic update function ---
   const updateHive = async (hiveId: string, updates: HiveUpdate) => {
+    // 1. Optimistic update – apply changes immediately
+    setHives(prev =>
+      prev.map(h => (h.id === hiveId ? { ...h, ...updates } : h))
+    );
+
     try {
+      // 2. Persist to backend
       const updated = await orchestratorService.updateHive(hiveId, updates);
-      setHives(prev => prev.map(h => h.id === hiveId ? updated : h));
+      // 3. Replace with the server’s response (in case it differs)
+      setHives(prev =>
+        prev.map(h => (h.id === hiveId ? updated : h))
+      );
       return updated;
     } catch (err) {
       console.error('Failed to update hive', err);
+      // 4. On error, revert by re‑fetching the current state from the server
+      const fresh = await orchestratorService.getHive(hiveId);
+      setHives(prev => prev.map(h => (h.id === hiveId ? fresh : h)));
       throw err;
     }
   };
