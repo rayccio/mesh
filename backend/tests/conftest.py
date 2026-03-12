@@ -7,8 +7,9 @@ from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
 
-# Set HIVEBOT_DATA to a writable temp directory before importing app modules
+# Set HIVEBOT_DATA and INTERNAL_API_KEY for tests
 os.environ['HIVEBOT_DATA'] = '/tmp/hivebot_test'
+os.environ['INTERNAL_API_KEY'] = 'test-internal-key'
 
 from app.core.database import Base, get_db
 from app.main import app

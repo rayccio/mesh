@@ -18,8 +18,6 @@ class SkillManager:
     def __init__(self):
         self.skill_repo = SkillRepository
         self.version_repo = SkillVersionRepository
-        # Agent skills are stored in the agent's JSON data, not in a separate table
-        # We'll handle them via AgentManager
 
     async def _get_skill_repo(self, session: AsyncSession = None):
         if session:
@@ -37,7 +35,7 @@ class SkillManager:
         skill_id = f"sk-{uuid.uuid4().hex[:8]}"
         skill = Skill(
             id=skill_id,
-            **skill_in.dict(),
+            **skill_in.model_dump(),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -77,7 +75,7 @@ class SkillManager:
                 if hasattr(skill, k):
                     setattr(skill, k, v)
             skill.updated_at = datetime.utcnow()
-            await repo.update(skill_id, skill.dict(by_alias=True))
+            await repo.update(skill_id, skill.model_dump(by_alias=True))
             return skill
         finally:
             await session.close()
@@ -98,7 +96,6 @@ class SkillManager:
             await session.close()
 
     async def create_version(self, skill_id: str, version_in: SkillVersionCreate) -> SkillVersion:
-        # Check skill exists
         skill = await self.get_skill(skill_id)
         if not skill:
             raise ValueError("Skill not found")
@@ -106,7 +103,7 @@ class SkillManager:
         version = SkillVersion(
             id=version_id,
             skill_id=skill_id,
-            **version_in.dict(),
+            **version_in.model_dump(),
             created_at=datetime.utcnow()
         )
         repo, session = await self._get_version_repo()
@@ -139,21 +136,15 @@ class SkillManager:
             for k, v in updates.items():
                 if hasattr(version, k):
                     setattr(version, k, v)
-            await repo.update(version_id, version.dict(by_alias=True))
+            await repo.update(version_id, version.model_dump(by_alias=True))
             return version
         finally:
             await session.close()
 
-    # Agent skills are managed via AgentManager's skills field (JSON)
-    # We'll keep those methods as before, but they should use AgentManager
-    # For simplicity, we'll keep them here but they must call AgentManager to update the agent's JSON.
-    # However, to avoid circular imports, we'll have AgentManager handle agent skills directly.
-    # So these methods will be moved to AgentManager.
-    # We'll keep the interface but redirect.
+    # Agent skills are handled via AgentManager
     async def install_skill(self, agent_id: str, skill_id: str, version_id: Optional[str] = None, config: dict = None):
-        # This should be handled by AgentManager
-        from .agent_manager import AgentManager  # local import to avoid circular
-        agent_manager = AgentManager(docker_service=None)  # docker_service not needed for worker agents
+        from .agent_manager import AgentManager
+        agent_manager = AgentManager(docker_service=None)
         return await agent_manager.install_skill(agent_id, skill_id, version_id, config)
 
     async def uninstall_skill(self, agent_id: str, skill_id: str) -> bool:

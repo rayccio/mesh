@@ -35,7 +35,7 @@ async def list_agents(
 @router.post("", response_model=Agent, status_code=201)
 async def create_agent(agent_in: AgentCreate, manager: AgentManager = Depends(get_agent_manager)):
     try:
-        logger.info(f"Creating agent with data: {agent_in.dict(by_alias=True)}")
+        logger.info(f"Creating agent with data: {agent_in.model_dump(by_alias=True)}")
         result = await manager.create_agent(agent_in)
         logger.info(f"Agent created successfully: {result.id}")
         return result

@@ -7,23 +7,21 @@ from app.services.redis_service import redis_service
 
 @pytest.mark.asyncio
 async def test_create_agent(session):
-    # Mock the internal API key
-    with patch.object(settings.secrets, 'get', return_value="test-internal-key"):
-        docker = Mock(spec=DockerService)
-        agent_manager = AgentManager(docker)
-        agent_in = AgentCreate(
-            name="Test Agent",
-            role="Worker",
-            soulMd="test soul",
-            identityMd="test identity",
-            toolsMd="test tools",
-            reasoning=ReasoningConfig(model="openai/gpt-4o", temperature=0.7),
-            reporting_target=ReportingTarget.PARENT
-        )
-        agent = await agent_manager.create_agent(agent_in)
-        assert agent.id.startswith("b-")
-        assert agent.name == "Test Agent"
+    docker = Mock(spec=DockerService)
+    agent_manager = AgentManager(docker)
+    agent_in = AgentCreate(
+        name="Test Agent",
+        role="Worker",
+        soulMd="test soul",
+        identityMd="test identity",
+        toolsMd="test tools",
+        reasoning=ReasoningConfig(model="openai/gpt-4o", temperature=0.7),
+        reporting_target=ReportingTarget.PARENT
+    )
+    agent = await agent_manager.create_agent(agent_in)
+    assert agent.id.startswith("b-")
+    assert agent.name == "Test Agent"
 
-        # Clean up
-        with patch.object(redis_service, 'client', Mock()):  # avoid Redis calls
-            await agent_manager.delete_agent(agent.id)
+    # Clean up
+    with patch.object(redis_service, 'client', Mock()):  # avoid Redis calls
+        await agent_manager.delete_agent(agent.id)
