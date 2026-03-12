@@ -17,7 +17,10 @@ async def test_register_agent_idle():
         mock_redis_client = AsyncMock()
         mock_redis_client.sadd = AsyncMock()
         mock_redis_client.close = AsyncMock()
-        mock_from_url.return_value = mock_redis_client
+
+        # Proper two‑level mock: from_url returns a coroutine that returns the client
+        mock_coro = AsyncMock(return_value=mock_redis_client)
+        mock_from_url.return_value = mock_coro
 
         await register_agent_idle("agent1")
 
@@ -35,20 +38,25 @@ async def test_process_think_command_registers_idle():
     })
     mock_update = AsyncMock()
     mock_call_ai = AsyncMock(return_value="AI response")
-    mock_redis_pub = AsyncMock()
     mock_redis_client = AsyncMock()
-    mock_redis_client.publish = mock_redis_pub
+    mock_redis_client.publish = AsyncMock()
     mock_redis_client.close = AsyncMock()
+
+    # Patch redis.from_url to return a coroutine that returns the mock client
+    mock_coro = AsyncMock(return_value=mock_redis_client)
+    mock_from_url = AsyncMock(return_value=mock_coro)
 
     with patch('worker.main.get_agent_from_db', mock_get_agent), \
          patch('worker.main.update_agent_state', mock_update), \
          patch('worker.main.call_ai_delta', mock_call_ai), \
-         patch('worker.main.redis.from_url', return_value=mock_redis_client), \
+         patch('worker.main.redis.from_url', mock_from_url), \
          patch('worker.main.register_agent_idle', AsyncMock()) as mock_register:
 
         await process_think_command("agent1", "user input", {}, simulation=False)
 
         mock_register.assert_awaited_once_with("agent1")
+        # Optionally verify publish was called
+        mock_redis_client.publish.assert_awaited()
 
 @pytest.mark.asyncio
 async def test_process_task_assign_registers_idle():
@@ -61,17 +69,20 @@ async def test_process_task_assign_registers_idle():
     })
     mock_update = AsyncMock()
     mock_call_ai = AsyncMock(return_value="AI output")
-    mock_redis_pub = AsyncMock()
     mock_redis_client = AsyncMock()
-    mock_redis_client.publish = mock_redis_pub
+    mock_redis_client.publish = AsyncMock()
     mock_redis_client.close = AsyncMock()
+
+    mock_coro = AsyncMock(return_value=mock_redis_client)
+    mock_from_url = AsyncMock(return_value=mock_coro)
 
     with patch('worker.main.get_agent_from_db', mock_get_agent), \
          patch('worker.main.update_agent_state', mock_update), \
          patch('worker.main.call_ai_delta', mock_call_ai), \
-         patch('worker.main.redis.from_url', return_value=mock_redis_client), \
+         patch('worker.main.redis.from_url', mock_from_url), \
          patch('worker.main.register_agent_idle', AsyncMock()) as mock_register:
 
         await process_task_assign("agent1", "task1", "description", {}, "goal1", simulation=False)
 
         mock_register.assert_awaited_once_with("agent1")
+        mock_redis_client.publish.assert_awaited()

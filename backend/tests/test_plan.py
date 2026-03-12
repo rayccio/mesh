@@ -29,9 +29,11 @@ async def test_create_plan_with_scheduler_enabled():
     mock_graph.goal_id = "g-test"
     mock_task_manager.create_task_graph.return_value = mock_graph
 
-    # Patch redis zadd and settings.SCHEDULER_ENABLED
+    # Patch redis zadd and the entire settings object with SCHEDULER_ENABLED=True
+    mock_settings = MagicMock()
+    mock_settings.SCHEDULER_ENABLED = True
     with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
-         patch('app.core.config.settings.SCHEDULER_ENABLED', True):
+         patch('app.api.v1.endpoints.plan.settings', mock_settings):
 
         # Call endpoint
         request = GoalRequest(goal="Test goal")
@@ -69,8 +71,10 @@ async def test_create_plan_with_scheduler_disabled():
     mock_graph.goal_id = "g-test"
     mock_task_manager.create_task_graph.return_value = mock_graph
 
+    mock_settings = MagicMock()
+    mock_settings.SCHEDULER_ENABLED = False
     with patch('app.services.redis_service.redis_service.zadd', new_callable=AsyncMock) as mock_zadd, \
-         patch('app.core.config.settings.SCHEDULER_ENABLED', False):
+         patch('app.api.v1.endpoints.plan.settings', mock_settings):
 
         request = GoalRequest(goal="Test goal")
         result = await create_plan(
