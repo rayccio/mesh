@@ -31,12 +31,12 @@ async def check_rate_limit(request: Request, limit_key: str = "default") -> None
     redis_key = f"rate_limit:{limit_key}:{client_ip}"
     now = int(time.time())
 
-    # Get current count and expiry
-    async with await redis_service.get_client() as redis:
-        pipe = redis.pipeline()
-        pipe.get(redis_key)
-        pipe.ttl(redis_key)
-        count_str, ttl = await pipe.execute()
+    # Get current count and expiry using the shared Redis client
+    redis = await redis_service.get_client()
+    pipe = redis.pipeline()
+    pipe.get(redis_key)
+    pipe.ttl(redis_key)
+    count_str, ttl = await pipe.execute()
 
     count = int(count_str) if count_str else 0
 
@@ -47,8 +47,7 @@ async def check_rate_limit(request: Request, limit_key: str = "default") -> None
         )
 
     # Increment or set with expiry
-    async with await redis_service.get_client() as redis:
-        if count == 0:
-            await redis.setex(redis_key, global_settings.rate_limit_period_seconds, 1)
-        else:
-            await redis.incr(redis_key)
+    if count == 0:
+        await redis.setex(redis_key, global_settings.rate_limit_period_seconds, 1)
+    else:
+        await redis.incr(redis_key)
