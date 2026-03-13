@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Hive, HiveMindAccessLevel, HiveMindConfig } from '../types';
 import { Icons } from '../constants';
 
@@ -9,23 +9,13 @@ interface HiveBrainProps {
 }
 
 export const HiveBrain: React.FC<HiveBrainProps> = ({ hive, allHives, onUpdate }) => {
-  // Local state to hold the config – ensures UI updates immediately on click
-  const [config, setConfig] = useState<HiveMindConfig>(
-    hive.hiveMindConfig || { accessLevel: HiveMindAccessLevel.ISOLATED, sharedHiveIds: [] }
-  );
-
-  // Sync local state when the prop changes (e.g., after external update)
-  useEffect(() => {
-    setConfig(hive.hiveMindConfig || { accessLevel: HiveMindAccessLevel.ISOLATED, sharedHiveIds: [] });
-  }, [hive]);
+  const config = hive.hiveMindConfig || { accessLevel: HiveMindAccessLevel.ISOLATED, sharedHiveIds: [] };
 
   const handleAccessLevelChange = (level: HiveMindAccessLevel) => {
     const newConfig = { ...config, accessLevel: level };
-    // If switching away from SHARED, clear sharedHiveIds
     if (level !== HiveMindAccessLevel.SHARED) {
       newConfig.sharedHiveIds = [];
     }
-    setConfig(newConfig);
     onUpdate(newConfig);
   };
 
@@ -34,9 +24,7 @@ export const HiveBrain: React.FC<HiveBrainProps> = ({ hive, allHives, onUpdate }
     const next = current.includes(hiveId)
       ? current.filter(id => id !== hiveId)
       : [...current, hiveId];
-    const newConfig = { ...config, sharedHiveIds: next };
-    setConfig(newConfig);
-    onUpdate(newConfig);
+    onUpdate({ ...config, sharedHiveIds: next });
   };
 
   return (
