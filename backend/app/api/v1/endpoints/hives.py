@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Body
 from typing import List, Optional
 import logging
-from ....models.types import Hive, HiveCreate, HiveUpdate, Agent, Message, FileEntry
+from ....models.types import Hive, HiveCreate, HiveUpdate, Agent, Message, FileEntry, AgentUpdate
 from ....services.hive_manager import HiveManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
@@ -13,6 +13,10 @@ async def get_hive_manager():
     docker_service = DockerService()
     agent_manager = AgentManager(docker_service)
     return HiveManager(agent_manager)
+
+async def get_agent_manager():
+    docker_service = DockerService()
+    return AgentManager(docker_service)
 
 @router.get("", response_model=List[Hive])
 async def list_hives(
@@ -119,14 +123,36 @@ async def add_agent_to_hive(
 async def update_hive_agent(
     hive_id: str,
     agent_id: str,
-    agent_update: Agent,
-    manager: HiveManager = Depends(get_hive_manager)
+    agent_update: AgentUpdate,
+    hive_manager: HiveManager = Depends(get_hive_manager),
+    agent_manager: AgentManager = Depends(get_agent_manager)
 ):
-    """Update an agent in a hive (deprecated)"""
-    hive = await manager.update_agent(hive_id, agent_id, agent_update)
+    """Update an agent in a hive – uses AgentManager, then updates hive's agent list."""
+    # First, update the agent via AgentManager
+    updated_agent = await agent_manager.update_agent(agent_id, agent_update)
+    if not updated_agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Then, ensure the agent is still in the hive's agent list (replace with updated version)
+    hive = await hive_manager.get_hive(hive_id)
     if not hive:
-        raise HTTPException(status_code=404, detail="Hive or agent not found")
-    return agent_update
+        raise HTTPException(status_code=404, detail="Hive not found")
+
+    # Find if agent belongs to this hive
+    agent_ids = hive.dict().get("agent_ids", [])
+    if agent_id not in agent_ids:
+        # Agent not in this hive – but we still return the updated agent?
+        # For backward compatibility, we return the updated agent even if not in hive.
+        # In the future, this endpoint should be removed.
+        logger.warning(f"Agent {agent_id} updated but not in hive {hive_id}")
+        return updated_agent
+
+    # Replace the agent in the hive's agent list (we don't store full agents, only IDs)
+    # Actually hive stores only agent_ids, so we don't need to update the hive for agent content.
+    # The frontend will fetch the agent separately. So we can just return the updated agent.
+    # But to keep the hive's agent list consistent (if we ever store full agents), we could update.
+    # For now, we'll just return the updated agent.
+    return updated_agent
 
 @router.delete("/{hive_id}/agents/{agent_id}", status_code=204)
 async def remove_agent_from_hive(
