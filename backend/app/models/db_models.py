@@ -113,3 +113,37 @@ class TaskEdgeModel(Base):
     to_task = Column(String, primary_key=True)
 
 # =====================================================================
+
+# ==================== ECONOMY TABLES ====================
+
+class EconomyAccountModel(Base):
+    __tablename__ = "economy_accounts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class TransactionModel(Base):
+    __tablename__ = "transactions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class StrategyModel(Base):
+    __tablename__ = "strategies"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class RiskPolicyModel(Base):
+    __tablename__ = "risk_policies"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

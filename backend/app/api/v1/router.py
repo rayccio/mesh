@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts, organization
+from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts, organization, economy
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
@@ -21,4 +21,5 @@ api_router.include_router(meta.router)
 api_router.include_router(evaluation.router)
 api_router.include_router(goals.router)
 api_router.include_router(artifacts.router)
-api_router.include_router(organization.router)   # <-- NEW
+api_router.include_router(organization.router)
+api_router.include_router(economy.router)

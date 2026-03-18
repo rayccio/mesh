@@ -404,3 +404,79 @@ class HiveArtifact(BaseModel):
     )
 
 # ==================== END NEW MODELS ====================
+
+# ==================== ECONOMY MODELS ====================
+
+class Currency(str, Enum):
+    USD = "usd"
+    EUR = "eur"
+    GBP = "gbp"
+    SIM = "sim"  # simulation currency
+
+class AccountType(str, Enum):
+    HIVE = "hive"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+class TransactionType(str, Enum):
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    TRADE = "trade"
+    FEE = "fee"
+    TRANSFER = "transfer"
+
+class TransactionStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+class EconomyAccount(BaseModel):
+    id: str
+    owner_id: str          # hive_id or agent_id
+    owner_type: AccountType
+    currency: Currency
+    balance: float = 0.0
+    created_at: datetime
+    updated_at: datetime
+
+class Transaction(BaseModel):
+    id: str
+    account_id: str
+    type: TransactionType
+    amount: float
+    currency: Currency
+    status: TransactionStatus
+    description: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+class StrategyType(str, Enum):
+    TRADING = "trading"
+    GROWTH = "growth"
+    OPTIMIZATION = "optimization"
+
+class Strategy(BaseModel):
+    id: str
+    name: str
+    type: StrategyType
+    owner_id: str          # hive_id or agent_id
+    owner_type: AccountType
+    config: Dict[str, Any] = {}
+    active: bool = True
+    last_run: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+class RiskPolicy(BaseModel):
+    id: str
+    owner_id: str
+    owner_type: AccountType
+    max_loss_per_trade: float = 0.0       # 0 means no limit
+    max_daily_loss: float = 0.0
+    max_position_size: float = 0.0
+    kill_switch_enabled: bool = False
+    kill_switch_triggered: bool = False
+    created_at: datetime
+    updated_at: datetime

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# HiveBot Production Installer – Phase 1
+# HiveBot Production Installer – Phase 10
 # Run from project root.
 
 # Color codes
@@ -51,7 +51,7 @@ fi
 
 show_banner
 
-echo -e "${GREEN}🚀 HiveBot Production Installer (Phase 1)${NC}"
+echo -e "${GREEN}🚀 HiveBot Production Installer (Phase 10)${NC}"
 echo "----------------------------------------"
 
 # --- 1. Check prerequisites ---
@@ -385,15 +385,14 @@ done
 
 # --- 12. Run database migrations (including new tables) ---
 echo -e "${YELLOW}📦 Running database migrations...${NC}"
-docker exec hivebot_backend python /app/scripts/create_goal_tables.py || echo -e "${RED}❌ Migration failed, but continuing...${NC}"
-
-# (Optional) Run other existing migrations if any
+docker exec hivebot_backend python /app/scripts/create_goal_tables.py || echo -e "${RED}❌ Goal migration failed, but continuing...${NC}"
+docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo -e "${RED}❌ Economy migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
 # --- 13. Final status ---
 clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 1 is now running!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 10 is now running!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"
