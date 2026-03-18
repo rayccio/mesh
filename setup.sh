@@ -110,6 +110,7 @@ echo -e "${YELLOW}📁 Ensuring directory structure...${NC}"
 mkdir -p ./agents
 mkdir -p ./logs
 mkdir -p ./data
+mkdir -p ./data/artifacts
 mkdir -p ./secrets
 mkdir -p ./global_files
 

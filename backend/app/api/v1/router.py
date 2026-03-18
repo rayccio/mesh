@@ -1,6 +1,5 @@
-# backend/app/api/v1/router.py
 from fastapi import APIRouter
-from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals  # <-- add goals
+from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
@@ -20,5 +19,5 @@ api_router.include_router(skills.router)
 api_router.include_router(agent_skills.router)
 api_router.include_router(meta.router)
 api_router.include_router(evaluation.router)
-api_router.include_router(goals.router)   # <-- new
-# internal router is included directly in main.py
+api_router.include_router(goals.router)
+api_router.include_router(artifacts.router)   # <-- new

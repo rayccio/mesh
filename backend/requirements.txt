@@ -18,3 +18,4 @@ sentence-transformers==2.2.2
 numpy<2
 torch==2.1.2
 huggingface-hub==0.18.0
+aiofiles==23.2.1
