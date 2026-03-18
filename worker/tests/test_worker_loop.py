@@ -99,7 +99,7 @@ async def test_process_task_assign_integration():
     agent_data = {
         "status": "IDLE",
         "memory": {"shortTerm": [], "summary": "", "tokenCount": 0},
-        "tools_md": "- run_code"
+        "tools_md": "## Permitted Tools\n- run_code"
     }
 
     with patch('worker.main.get_agent_from_db', new_callable=AsyncMock) as mock_get, \

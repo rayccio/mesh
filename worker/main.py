@@ -111,17 +111,19 @@ def parse_tool_calls(ai_response: str) -> list:
 
 def parse_allowed_tools(tools_md: str) -> list:
     """Parse tools.md to extract list of allowed tool names.
-    Assumes format like:
-    ## Permitted Tools
-    - web_search
-    - ssh_execute
-    etc.
+    Looks for the '## Permitted Tools' section and collects lines starting with '- ' until the next heading.
     """
     allowed = []
+    in_permitted_section = False
     for line in tools_md.splitlines():
         line = line.strip()
-        if line.startswith('- '):
-            # Extract the tool name: first word after dash
+        if line.startswith('## Permitted Tools'):
+            in_permitted_section = True
+            continue
+        elif line.startswith('## '):  # any other heading ends the section
+            in_permitted_section = False
+            continue
+        if in_permitted_section and line.startswith('- '):
             parts = line[2:].split()
             if parts:
                 tool = parts[0].strip('`*_')

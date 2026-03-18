@@ -1,3 +1,4 @@
+# .github/workflows/test.yml
 name: Test
 
 on:
@@ -39,6 +40,8 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+    - name: Create test data directory
+      run: mkdir -p ./test_data/secrets
     - name: Install dependencies
       run: |
         cd backend
@@ -114,7 +117,54 @@ jobs:
         SIMULATOR_URL: http://localhost:8080
 
   test-scheduler:
-    # Placeholder for future scheduler tests
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: hivebot
+          POSTGRES_PASSWORD: hivebot
+          POSTGRES_DB: hivebot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hivebot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-      - run: echo "Scheduler tests not yet implemented"
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        cd scheduler
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio httpx
+    - name: Run tests
+      run: |
+        cd scheduler
+        export PYTHONPATH=$PWD:$PYTHONPATH
+        pytest tests/ -v
+      env:
+        POSTGRES_HOST: localhost
+        POSTGRES_USER: hivebot
+        POSTGRES_PASSWORD: hivebot
+        POSTGRES_DB: hivebot_test
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
+        INTERNAL_API_KEY: test-key
+        ORCHESTRATOR_URL: http://localhost:8000
