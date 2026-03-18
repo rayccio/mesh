@@ -11,7 +11,7 @@ import os
 import tempfile
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/hives/{hive_id}/goals/{goal_id}/artifacts", tags=["artifacts"])
+router = APIRouter(tags=["artifacts"])   # <-- removed prefix
 
 async def get_artifact_service():
     return ArtifactService()
@@ -21,7 +21,7 @@ async def get_hive_manager():
     agent_manager = AgentManager(docker)
     return HiveManager(agent_manager)
 
-@router.get("", response_model=List[HiveArtifact])
+@router.get("/hives/{hive_id}/goals/{goal_id}/artifacts", response_model=List[HiveArtifact])
 async def list_artifacts(
     hive_id: str,
     goal_id: str,
@@ -35,7 +35,7 @@ async def list_artifacts(
     artifacts = await artifact_service.list_artifacts(goal_id, task_id)
     return artifacts
 
-@router.post("", response_model=HiveArtifact, status_code=201)
+@router.post("/hives/{hive_id}/goals/{goal_id}/artifacts", response_model=HiveArtifact, status_code=201)
 async def create_artifact(
     hive_id: str,
     goal_id: str,
@@ -49,7 +49,6 @@ async def create_artifact(
     hive = await hive_manager.get_hive(hive_id)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive not found")
-    # Read file content
     content = await file.read()
     try:
         artifact = await artifact_service.create_artifact(
@@ -63,7 +62,7 @@ async def create_artifact(
         raise HTTPException(status_code=400, detail=str(e))
     return artifact
 
-@router.get("/{artifact_id}", response_class=FileResponse)
+@router.get("/hives/{hive_id}/goals/{goal_id}/artifacts/{artifact_id}", response_class=FileResponse)
 async def download_artifact(
     hive_id: str,
     goal_id: str,
@@ -84,7 +83,6 @@ async def download_artifact(
     if content is None:
         raise HTTPException(status_code=404, detail="Artifact file not found")
 
-    # Write to temporary file for FileResponse
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -100,7 +98,7 @@ async def download_artifact(
         background=BackgroundTask(cleanup)
     )
 
-@router.patch("/{artifact_id}/status", response_model=HiveArtifact)
+@router.patch("/hives/{hive_id}/goals/{goal_id}/artifacts/{artifact_id}/status", response_model=HiveArtifact)
 async def update_artifact_status(
     hive_id: str,
     goal_id: str,
@@ -119,7 +117,7 @@ async def update_artifact_status(
         raise HTTPException(status_code=404, detail="Artifact not found in this goal")
     return artifact
 
-@router.delete("/{artifact_id}", status_code=204)
+@router.delete("/hives/{hive_id}/goals/{goal_id}/artifacts/{artifact_id}", status_code=204)
 async def delete_artifact(
     hive_id: str,
     goal_id: str,
