@@ -33,6 +33,7 @@ class GenerateDeltaRequest(BaseModel):
     agent_id: str
     input: str
     config: Dict[str, Any] = {}
+    system_prompt_override: Optional[str] = None   # <-- NEW
 
 class GenerateResponse(BaseModel):
     response: str
@@ -63,6 +64,7 @@ async def ai_generate_delta(
     agent_id = request.agent_id
     user_input = request.input
     config = request.config
+    system_override = request.system_prompt_override
 
     conversation = await redis_service.get_conversation(agent_id, limit=50)
 
@@ -163,7 +165,11 @@ async def ai_generate_delta(
         "If you are unsure, ask the user to specify the target agent and the channel (if needed)."
     )
 
-    system_content = f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly and not default to generic AI responses.
+    # Use system override if provided, otherwise build from agent data
+    if system_override:
+        system_content = system_override
+    else:
+        system_content = f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly and not default to generic AI responses.
 
 IDENTITY (MANDATORY):
 {agent.identity_md}

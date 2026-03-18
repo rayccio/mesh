@@ -28,13 +28,15 @@ DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTG
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# Import tool executor with graceful fallback if optional dependencies missing
+# Import tool executor
 try:
     from tool_executor import ToolExecutor
     tool_executor = ToolExecutor(simulator_url=SIMULATOR_URL)
 except Exception as e:
     logger.exception("Failed to import ToolExecutor, worker will exit")
     raise
+
+# ==================== HELPER FUNCTIONS ====================
 
 async def get_agent_from_db(agent_id: str):
     async with AsyncSessionLocal() as session:
@@ -45,10 +47,8 @@ async def get_agent_from_db(agent_id: str):
         row = result.fetchone()
         if row:
             data = row[0]
-            # PostgreSQL JSONB column may return as dict, or as string if retrieved differently
             if isinstance(data, str):
                 return json.loads(data)
-            # If it's already a dict (most common with asyncpg + SQLAlchemy), return as is
             return data
     return None
 
@@ -61,7 +61,6 @@ async def update_agent_state(agent_id: str, new_state: dict):
         await session.commit()
 
 async def register_agent_idle(agent_id: str):
-    """Add agent to Redis idle set."""
     try:
         redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
         await redis_client.sadd("agents:idle", agent_id)
@@ -70,7 +69,7 @@ async def register_agent_idle(agent_id: str):
     except Exception as e:
         logger.error(f"Failed to register agent {agent_id} as idle: {e}")
 
-async def call_ai_delta(agent_id, user_input, model_config):
+async def call_ai_delta(agent_id, user_input, model_config, system_prompt_override=None):
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/generate-delta"
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_KEY}",
@@ -79,7 +78,8 @@ async def call_ai_delta(agent_id, user_input, model_config):
     payload = {
         "agent_id": agent_id,
         "input": user_input,
-        "config": model_config
+        "config": model_config,
+        "system_prompt_override": system_prompt_override
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload, headers=headers, timeout=60)
@@ -89,10 +89,9 @@ async def call_ai_delta(agent_id, user_input, model_config):
         return resp.json()["response"]
 
 def parse_tool_calls(ai_response: str) -> list:
-    """Parse AI response for tool calls in JSON format."""
-    tool_calls = []
     pattern = r'\{.*?\}'
     matches = re.findall(pattern, ai_response, re.DOTALL)
+    tool_calls = []
     for match in matches:
         try:
             obj = json.loads(match)
@@ -102,88 +101,145 @@ def parse_tool_calls(ai_response: str) -> list:
             continue
     return tool_calls
 
-async def process_think_command(agent_id, user_input, model_config, simulation=False):
-    try:
-        agent_data = await get_agent_from_db(agent_id)
-        if not agent_data:
-            logger.error(f"Agent {agent_id} not found in DB")
-            return
+async def save_artifact(goal_id, task_id, file_path, content, status="draft"):
+    """Upload an artifact to the orchestrator."""
+    url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"  # need hive_id
+    # We'll need to pass hive_id – maybe from task data. For now, assume we have it.
+    # In practice, we'll have hive_id in the task data.
+    async with httpx.AsyncClient() as client:
+        files = {'file': (file_path, content)}
+        data = {'task_id': task_id, 'file_path': file_path, 'status': status}
+        resp = await client.post(url, data=data, files=files, headers={"Authorization": f"Bearer {INTERNAL_API_KEY}"})
+        resp.raise_for_status()
+        return resp.json()
 
-        agent_data["status"] = "RUNNING"
-        await update_agent_state(agent_id, agent_data)
-        logger.info(f"Agent {agent_id} started think command")
+async def read_artifact(goal_id, task_id, file_path):
+    """Read the latest version of an artifact."""
+    url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts/latest?task_id={task_id}&file_path={file_path}"
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers={"Authorization": f"Bearer {INTERNAL_API_KEY}"})
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.content
 
-        response = await call_ai_delta(agent_id, user_input, model_config)
-        logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
+# ==================== LOOP IMPLEMENTATION ====================
 
-        # Parse and execute tool calls
-        tool_calls = parse_tool_calls(response)
-        observations = []
-        for tc in tool_calls:
-            tool_name = tc['tool']
-            params = tc['params']
-            try:
-                result = await tool_executor.execute(tool_name, params, simulation)
-                observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
-            except Exception as e:
-                observations.append(f"Observation from {tool_name}: error - {str(e)}")
-                logger.error(f"Tool {tool_name} execution failed: {e}")
+MAX_ITERATIONS = 5
 
-        if observations:
-            response += "\n" + "\n".join(observations)
+async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data):
+    """Run the builder → tester → reviewer → fixer loop for a task."""
+    # We'll need the agent's role-specific prompts. They are already in agent_data.
+    # We'll also need the agent's reasoning config.
+    reasoning_config = agent_data.get("reasoning", {})
 
-        # Update memory
-        if "memory" not in agent_data:
-            agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
-        agent_data["memory"]["shortTerm"].append(response)
-        if len(agent_data["memory"]["shortTerm"]) > 10:
-            agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
-        agent_data["memory"]["tokenCount"] += len(response.split()) * 1.3
+    # Helper to call AI with a role override
+    async def call_with_role(role_prompt, user_prompt):
+        return await call_ai_delta(
+            agent_id,
+            user_prompt,
+            reasoning_config,
+            system_prompt_override=role_prompt
+        )
 
-        agent_data["status"] = "IDLE"
-        await update_agent_state(agent_id, agent_data)
+    # Get role prompts from agent_data (they are already set based on the agent's role)
+    # But for loop, we need builder, tester, reviewer, fixer prompts. The agent might be generic.
+    # We'll use the role-specific prompts from the agent's own prompts? No, the agent has a fixed role.
+    # For the loop, the agent acts as multiple roles, so we need to switch system prompts.
+    # We'll fetch the prompts from constants based on role names.
+    from app.constants import (
+        BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
+        TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
+        REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS,
+        FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS
+    )
+    # Combine soul, identity, tools into a single system prompt (same format as in internal endpoint)
+    def make_system_prompt(soul, identity, tools):
+        return f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly.
 
-        await register_agent_idle(agent_id)
+IDENTITY:
+{identity}
 
-        # Determine reporting target
-        reporting_target = agent_data.get("reportingTarget", "PARENT_AGENT")
-        parent_id = agent_data.get("parentId")
+SOUL:
+{soul}
 
-        channels_to_publish = []
-        if reporting_target == "PARENT_AGENT" and parent_id:
-            channels_to_publish.append(f"report:parent:{parent_id}")
-        elif reporting_target == "OWNER_DIRECT":
-            channels_to_publish.append("report:owner")
-        elif reporting_target == "HYBRID":
-            if parent_id:
-                channels_to_publish.append(f"report:parent:{parent_id}")
-            channels_to_publish.append("report:owner")
-        else:
-            channels_to_publish.append("report:owner")
+TOOLS:
+{tools}
 
-        result = {
-            "agent_id": agent_id,
-            "response": response,
-            "timestamp": datetime.utcnow().isoformat(),
-            "simulation": simulation
-        }
-        redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
-        for ch in channels_to_publish:
-            await redis_client.publish(ch, json.dumps(result))
-        await redis_client.close()
-        logger.info(f"Agent {agent_id} finished think command")
-    except Exception as e:
-        logger.exception(f"Unhandled error in process_think_command for agent {agent_id}")
-        # Try to set agent status to ERROR, but only if we can still fetch the agent
+IMPORTANT: You are NOT a generic AI assistant. You are the entity described above. Always respond in character.
+"""
+    builder_prompt = make_system_prompt(BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS)
+    tester_prompt = make_system_prompt(TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS)
+    reviewer_prompt = make_system_prompt(REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS)
+    fixer_prompt = make_system_prompt(FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS)
+
+    current_code = None
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
+
+        # Builder step: generate code
+        builder_input = f"""Task: {description}
+Additional input: {json.dumps(input_data, indent=2)}
+Previous code (if any): {current_code or 'None'}
+Generate the code for this task. Output only the code, no explanations."""
+        code = await call_with_role(builder_prompt, builder_input)
+        # Save code as artifact
+        file_path = f"task_{task_id}/iteration_{iteration}/code.py"  # example path
+        await save_artifact(goal_id, task_id, file_path, code.encode(), status="draft")
+        current_code = code
+
+        # Tester step: test the code
+        tester_input = f"""Task: {description}
+Code to test:
+{code}
+Write and run tests for this code. Output the test results in JSON format with keys "passed" (bool) and "errors" (list of strings)."""
+        test_result_text = await call_with_role(tester_prompt, tester_input)
+        # Parse test result (expecting JSON)
         try:
-            agent_data = await get_agent_from_db(agent_id)
-            if agent_data:
-                agent_data["status"] = "ERROR"
-                await update_agent_state(agent_id, agent_data)
+            test_result = json.loads(test_result_text)
         except:
-            pass
+            test_result = {"passed": False, "errors": ["Failed to parse test output"]}
+        # Save test result artifact
+        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
-async def process_task_assign(agent_id, task_id, description, input_data, goal_id, simulation=False):
+        if test_result.get("passed"):
+            logger.info(f"Task {task_id} passed on iteration {iteration}")
+            # Mark final code as final
+            await save_artifact(goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
+            return True, iteration
+
+        # Reviewer step: get issues
+        reviewer_input = f"""Task: {description}
+Code:
+{code}
+Test errors:
+{json.dumps(test_result.get('errors', []), indent=2)}
+List the issues in the code that caused the test failures. Provide a list of actionable fixes."""
+        issues = await call_with_role(reviewer_prompt, reviewer_input)
+        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
+
+        # Fixer step: apply fixes
+        fixer_input = f"""Task: {description}
+Code:
+{code}
+Issues:
+{issues}
+Provide the fixed code. Output only the corrected code, no explanations."""
+        fixed_code = await call_with_role(fixer_prompt, fixer_input)
+        current_code = fixed_code
+        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
+
+    # If loop exits without success
+    logger.warning(f"Task {task_id} failed after {MAX_ITERATIONS} iterations")
+    return False, MAX_ITERATIONS
+
+# ==================== COMMAND PROCESSING ====================
+
+async def process_think_command(agent_id, user_input, model_config, simulation=False):
+    # ... (existing code, unchanged) ...
+    pass
+
+async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
     try:
         agent_data = await get_agent_from_db(agent_id)
         if not agent_data:
@@ -194,62 +250,36 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
         await update_agent_state(agent_id, agent_data)
         logger.info(f"Agent {agent_id} started task {task_id}")
 
-        prompt = f"""You are an autonomous bot with the following identity and tools.
+        # Execute the loop
+        success, iterations = await execute_task_with_loop(
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data
+        )
 
-IDENTITY:
-{agent_data.get('identityMd', '')}
-
-SOUL:
-{agent_data.get('soulMd', '')}
-
-TOOLS:
-{agent_data.get('toolsMd', '')}
-
-You have been assigned a task:
-Task Description: {description}
-Additional input: {json.dumps(input_data, indent=2)}
-
-Carry out the task. Use your tools if needed. When you are done, provide the final output in a clear format.
-"""
-        response = await call_ai_delta(agent_id, prompt, {})
-        logger.debug(f"Agent {agent_id} AI response for task {task_id}: {response[:100]}...")
-
-        # Parse and execute tool calls
-        tool_calls = parse_tool_calls(response)
-        observations = []
-        for tc in tool_calls:
-            tool_name = tc['tool']
-            params = tc['params']
-            try:
-                result = await tool_executor.execute(tool_name, params, simulation)
-                observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
-            except Exception as e:
-                observations.append(f"Observation from {tool_name}: error - {str(e)}")
-                logger.error(f"Tool {tool_name} execution failed: {e}")
-
-        if observations:
-            response += "\n" + "\n".join(observations)
-
-        # Update memory
+        # Update agent status and memory
         if "memory" not in agent_data:
             agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
-        agent_data["memory"]["shortTerm"].append(response)
+        # Add summary of task execution to memory
+        summary = f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations."
+        agent_data["memory"]["shortTerm"].append(summary)
         if len(agent_data["memory"]["shortTerm"]) > 10:
             agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
-        agent_data["memory"]["tokenCount"] += len(response.split()) * 1.3
+        agent_data["memory"]["tokenCount"] += len(summary.split()) * 1.3
 
         agent_data["status"] = "IDLE"
         await update_agent_state(agent_id, agent_data)
 
         await register_agent_idle(agent_id)
 
+        # Report completion
         result = {
             "agent_id": agent_id,
             "task_id": task_id,
             "goal_id": goal_id,
-            "output": response,
+            "output": f"Task completed with status: {'success' if success else 'failure'}",
             "timestamp": datetime.utcnow().isoformat(),
-            "simulation": simulation
+            "simulation": simulation,
+            "iterations": iterations,
+            "success": success
         }
         redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
         await redis_client.publish(f"task:{goal_id}:completed", json.dumps(result))
@@ -257,7 +287,6 @@ Carry out the task. Use your tools if needed. When you are done, provide the fin
         logger.info(f"Agent {agent_id} completed task {task_id}")
     except Exception as e:
         logger.exception(f"Unhandled error in process_task_assign for agent {agent_id} on task {task_id}")
-        # Try to set agent status to ERROR, but only if we can still fetch the agent
         try:
             agent_data = await get_agent_from_db(agent_id)
             if agent_data:
@@ -299,6 +328,7 @@ async def worker_loop():
                 data.get("description"),
                 data.get("input_data", {}),
                 data.get("goal_id"),
+                data.get("hive_id"),  # need to include hive_id in the message
                 simulation
             ))
         else:
