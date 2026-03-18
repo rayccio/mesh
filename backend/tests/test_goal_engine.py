@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 from app.services.goal_engine import GoalEngine
 from app.models.types import HiveGoalStatus
 from datetime import datetime
+import json   # <-- added
 
 @pytest.mark.asyncio
 async def test_create_goal():
@@ -43,7 +44,9 @@ async def test_get_goal():
     with patch('app.services.goal_engine.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_conn.fetchone = AsyncMock(return_value=(json.dumps(mock_goal_data),))
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (json.dumps(mock_goal_data),)
+        mock_conn.execute.return_value = mock_result
 
         goal = await engine.get_goal("g-123")
         assert goal is not None
@@ -54,7 +57,7 @@ async def test_update_goal_status():
     engine = GoalEngine()
     with patch('app.services.goal_engine.GoalEngine.get_goal') as mock_get, \
          patch('app.services.goal_engine.AsyncSessionLocal') as mock_session:
-        mock_goal = AsyncMock()
+        mock_goal = MagicMock()
         mock_goal.model_dump_json.return_value = "{}"
         mock_get.return_value = mock_goal
         mock_conn = AsyncMock()

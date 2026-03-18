@@ -4,6 +4,8 @@ from fastapi import HTTPException
 from datetime import datetime
 from app.api.v1.endpoints.plan import create_plan, GoalRequest
 from app.models.task import Task, TaskStatus
+from app.services.skill_manager import SkillManager
+from app.services.skill_suggestion_manager import SkillSuggestionManager
 
 @pytest.mark.asyncio
 async def test_create_plan_with_scheduler_enabled():
@@ -14,6 +16,13 @@ async def test_create_plan_with_scheduler_enabled():
     mock_hive = MagicMock()
     mock_hive.global_user_md = "test context"
     mock_hive_manager.get_hive = AsyncMock(return_value=mock_hive)
+
+    # Mock skill manager
+    mock_skill_manager = AsyncMock(spec=SkillManager)
+    mock_skill_manager.list_skills = AsyncMock(return_value=[])
+
+    # Mock suggestion manager
+    mock_suggestion_manager = AsyncMock(spec=SkillSuggestionManager)
 
     # Patch HiveManager inside the endpoint
     with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
@@ -42,7 +51,9 @@ async def test_create_plan_with_scheduler_enabled():
                     hive_id="h-test",
                     goal_req=request,
                     task_manager=mock_task_manager,
-                    agent_manager=mock_agent_manager
+                    agent_manager=mock_agent_manager,
+                    skill_manager=mock_skill_manager,
+                    suggestion_manager=mock_suggestion_manager
                 )
 
                 # Verify zadd was called once with correct key and member
@@ -60,6 +71,11 @@ async def test_create_plan_with_scheduler_disabled():
     mock_hive = MagicMock()
     mock_hive.global_user_md = "test context"
     mock_hive_manager.get_hive = AsyncMock(return_value=mock_hive)
+
+    mock_skill_manager = AsyncMock(spec=SkillManager)
+    mock_skill_manager.list_skills = AsyncMock(return_value=[])
+
+    mock_suggestion_manager = AsyncMock(spec=SkillSuggestionManager)
 
     with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
         mock_planner = AsyncMock()
@@ -82,7 +98,9 @@ async def test_create_plan_with_scheduler_disabled():
                     hive_id="h-test",
                     goal_req=request,
                     task_manager=mock_task_manager,
-                    agent_manager=mock_agent_manager
+                    agent_manager=mock_agent_manager,
+                    skill_manager=mock_skill_manager,
+                    suggestion_manager=mock_suggestion_manager
                 )
 
                 mock_zadd.assert_not_called()

@@ -7,7 +7,7 @@ async def test_create_agent_api(client: AsyncClient, session):
 
     agent_in = {
         "name": "API Test Agent",
-        "role": "Worker",
+        "role": "generic",  # <-- changed from "Worker" to valid enum
         "soulMd": "test soul",
         "identityMd": "test identity",
         "toolsMd": "test tools",

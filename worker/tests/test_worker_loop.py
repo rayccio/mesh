@@ -18,11 +18,9 @@ async def test_execute_task_with_loop_success_first_try():
     agent_data = {"reasoning": {"model": "openai/gpt-4o"}}
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
-         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save, \
-         patch('worker.main.BUILDER_SOUL', "builder"), patch('worker.main.BUILDER_IDENTITY', "builder_id"), patch('worker.main.BUILDER_TOOLS', "builder_tools"), \
-         patch('worker.main.TESTER_SOUL', "tester"), patch('worker.main.TESTER_IDENTITY', "tester_id"), patch('worker.main.TESTER_TOOLS', "tester_tools"):
+         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
 
-        # Builder returns code
+        # Builder returns code, tester passes
         mock_call.side_effect = [
             "def test_func(): return True",  # builder
             '{"passed": true, "errors": []}'  # tester
@@ -48,11 +46,7 @@ async def test_execute_task_with_loop_failure_then_fix():
     agent_data = {"reasoning": {"model": "openai/gpt-4o"}}
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
-         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save, \
-         patch('worker.main.BUILDER_SOUL', "builder"), patch('worker.main.BUILDER_IDENTITY', "builder_id"), patch('worker.main.BUILDER_TOOLS', "builder_tools"), \
-         patch('worker.main.TESTER_SOUL', "tester"), patch('worker.main.TESTER_IDENTITY', "tester_id"), patch('worker.main.TESTER_TOOLS', "tester_tools"), \
-         patch('worker.main.REVIEWER_SOUL', "reviewer"), patch('worker.main.REVIEWER_IDENTITY', "reviewer_id"), patch('worker.main.REVIEWER_TOOLS', "reviewer_tools"), \
-         patch('worker.main.FIXER_SOUL', "fixer"), patch('worker.main.FIXER_IDENTITY', "fixer_id"), patch('worker.main.FIXER_TOOLS', "fixer_tools"):
+         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
 
         # Simulate: builder (1), tester fails (2), reviewer (3), fixer (4), tester passes (5)
         mock_call.side_effect = [
@@ -87,7 +81,7 @@ async def test_process_task_assign_integration():
          patch('worker.main.register_agent_idle', new_callable=AsyncMock) as mock_register, \
          patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_redis:
 
-        mock_get.return_value = {"status": "IDLE", "memory": {}}
+        mock_get.return_value = {"status": "IDLE", "memory": {"shortTerm": []}}
         mock_loop.return_value = (True, 2)
 
         mock_redis_client = AsyncMock()

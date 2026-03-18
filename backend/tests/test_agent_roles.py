@@ -7,6 +7,7 @@ from app.constants import (
     BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
     TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS
 )
+from app.services.skill_manager import SkillManager  # not used directly but needed for imports
 
 @pytest.mark.asyncio
 async def test_get_prompts_for_role():
@@ -36,13 +37,19 @@ async def test_create_role_agent(session):
     reasoning = ReasoningConfig(model="openai/gpt-4o", temperature=0.7)
     with patch('app.services.agent_manager.AsyncSessionLocal') as mock_session, \
          patch('app.services.agent_manager.redis_service.sadd', new_callable=AsyncMock) as mock_sadd, \
-         patch('builtins.open', new_callable=MagicMock) as mock_open:
+         patch('builtins.open', new_callable=MagicMock) as mock_open, \
+         patch('app.services.agent_manager.AgentRepository') as mock_repo:
 
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_conn.execute = AsyncMock()
-        mock_conn.commit = AsyncMock()
-        mock_conn.refresh = AsyncMock()
+
+        # Mock the repository create method
+        mock_repo_instance = AsyncMock()
+        mock_repo.return_value = mock_repo_instance
+        mock_repo_instance.create = AsyncMock(return_value=None)
+
+        # Mock the _get_repo method to return our mock repo
+        manager._get_repo = AsyncMock(return_value=(mock_repo_instance, mock_conn))
 
         agent = await manager.create_role_agent(
             name="Builder Bot",

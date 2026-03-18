@@ -5,23 +5,20 @@ from app.models.types import HiveArtifact
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 
 @pytest.mark.asyncio
-async def test_create_artifact():
+async def test_create_artifact(tmp_path):
+    # Override base_path with temporary directory
     service = ArtifactService()
-    service.base_path.mkdir = MagicMock()
-    service.base_path.exists = MagicMock(return_value=True)
+    service.base_path = Path(tmp_path) / "artifacts"
+    service.base_path.mkdir(parents=True, exist_ok=True)
 
-    with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session, \
-         patch('aiofiles.open', new_callable=AsyncMock) as mock_open:
-
+    with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
         # Mock _get_next_version to return 1
         service._get_next_version = AsyncMock(return_value=1)
-
-        mock_file = AsyncMock()
-        mock_open.return_value.__aenter__.return_value = mock_file
 
         content = b"test content"
         artifact = await service.create_artifact(
@@ -38,7 +35,10 @@ async def test_create_artifact():
         assert artifact.file_path == "test.txt"
         assert artifact.version == 1
         assert artifact.status == "draft"
-        mock_file.write.assert_called_once_with(content)
+        # Check that file was written
+        artifact_file = service.base_path / artifact.id
+        assert artifact_file.exists()
+        assert artifact_file.read_bytes() == content
         mock_conn.execute.assert_awaited_once()
         mock_conn.commit.assert_awaited_once()
 
@@ -58,7 +58,10 @@ async def test_get_artifact():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_conn.fetchone = AsyncMock(return_value=(json.dumps(mock_data),))
+        # fetchone is a synchronous method on the mock result object
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (json.dumps(mock_data),)
+        mock_conn.execute.return_value = mock_result
 
         artifact = await service.get_artifact("art-123")
         assert artifact is not None
@@ -80,7 +83,10 @@ async def test_list_artifacts():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_conn.fetchall = AsyncMock(return_value=[(json.dumps(d),) for d in mock_data])
+        # fetchall is synchronous
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [(json.dumps(d),) for d in mock_data]
+        mock_conn.execute.return_value = mock_result
 
         artifacts = await service.list_artifacts("g-test")
         assert len(artifacts) == 1

@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.main import app as fastapi_app
-from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus
+from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus, Hive
 from datetime import datetime
 import json
 
@@ -33,16 +33,18 @@ async def test_create_goal_api(client: AsyncClient):
     mock_planner.plan.return_value = [mock_task]
 
     mock_hive_manager = AsyncMock()
-    mock_hive = MagicMock()
+    mock_hive = MagicMock(spec=Hive)
     mock_hive.global_user_md = "context"
     mock_hive_manager.get_hive.return_value = mock_hive
+
+    # Mock SkillManager
+    mock_skill_manager = MagicMock()
+    mock_skill_manager.list_skills = AsyncMock(return_value=[])
 
     with patch('app.api.v1.endpoints.goals.get_goal_engine', return_value=mock_goal_engine), \
          patch('app.api.v1.endpoints.goals.get_planner', return_value=mock_planner), \
          patch('app.api.v1.endpoints.goals.get_hive_manager', return_value=mock_hive_manager), \
-         patch('app.api.v1.endpoints.goals.SkillManager') as mock_skill_manager:
-
-        mock_skill_manager.return_value.list_skills = AsyncMock(return_value=[])
+         patch('app.api.v1.endpoints.goals.SkillManager', return_value=mock_skill_manager):
 
         payload = {
             "description": "Test goal",
