@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock   # <-- added MagicMock
 from app.services.goal_engine import GoalEngine
 from app.models.types import HiveGoalStatus
 from datetime import datetime
-import json   # <-- added
+import json
 
 @pytest.mark.asyncio
 async def test_create_goal():
