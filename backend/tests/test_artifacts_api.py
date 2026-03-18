@@ -1,3 +1,4 @@
+# backend/tests/test_artifacts_api.py
 import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -78,7 +79,7 @@ async def test_create_artifact_api(client: AsyncClient):
     fastapi_app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
-async def test_download_artifact_api(client: AsyncClient):
+async def test_download_artifact_api(client: AsyncClient, tmp_path):
     mock_service = AsyncMock()
     mock_artifact = HiveArtifact(
         id="art-123",
@@ -101,15 +102,21 @@ async def test_download_artifact_api(client: AsyncClient):
     fastapi_app.dependency_overrides[get_artifact_service] = lambda: mock_service
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
 
+    # Create a real temporary file to satisfy FileResponse.stat()
+    temp_file = tmp_path / "test.txt"
+    temp_file.write_bytes(b"dummy")  # will be overwritten by endpoint, but that's fine
+    temp_file_path = str(temp_file)
+
     with patch('app.api.v1.endpoints.artifacts.tempfile.NamedTemporaryFile') as mock_temp, \
-         patch('os.unlink'):
-        mock_temp.return_value.__enter__.return_value.name = "/tmp/xyz"
+         patch('os.unlink') as mock_unlink:  # prevent deletion so we can check headers
+        mock_temp.return_value.__aenter__.return_value.name = temp_file_path
         response = await client.get("/api/v1/hives/h-test/goals/g-test/artifacts/art-123")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/octet-stream"
         assert response.headers["content-disposition"] == 'attachment; filename="test.txt"'
 
     fastapi_app.dependency_overrides.clear()
+    # tmp_path will clean up the file automatically
 
 @pytest.mark.asyncio
 async def test_update_artifact_status_api(client: AsyncClient):
