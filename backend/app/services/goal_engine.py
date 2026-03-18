@@ -73,3 +73,15 @@ class GoalEngine:
             )
             rows = result.fetchall()
             return [HiveGoal.model_validate_json(r[0]) for r in rows]
+
+    # ==================== NEW METHOD ====================
+    async def list_goals_by_status(self, statuses: List[HiveGoalStatus]) -> List[HiveGoal]:
+        """List goals with any of the given statuses."""
+        status_strings = [s.value for s in statuses]
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT data FROM goals WHERE data->>'status' = ANY(:statuses) ORDER BY (data->>'created_at')::timestamptz"),
+                {"statuses": status_strings}
+            )
+            rows = result.fetchall()
+            return [HiveGoal.model_validate_json(r[0]) for r in rows]

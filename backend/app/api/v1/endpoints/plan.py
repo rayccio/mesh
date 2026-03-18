@@ -1,3 +1,4 @@
+# backend/app/api/v1/endpoints/plan.py
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from pydantic import BaseModel
@@ -8,7 +9,7 @@ from ....services.docker_service import DockerService
 from ....services.redis_service import redis_service
 from ....services.skill_manager import SkillManager
 from ....services.skill_suggestion_manager import SkillSuggestionManager
-from ....models.skill import SkillSuggestionCreate  # <-- IMPORT ADDED
+from ....models.skill import SkillSuggestionCreate
 from ....models.task import Task, TaskStatus
 from ....services.hive_manager import HiveManager
 from ....core.config import settings
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/hives/{hive_id}/plan", tags=["planning"])
 
 class GoalRequest(BaseModel):
     goal: str
-    auto_spawn: bool = True  # NEW: whether to spawn agents if none idle
+    auto_spawn: bool = True
 
 async def get_task_manager():
     return TaskManager()
@@ -142,11 +143,12 @@ async def create_plan(
 
     # --- Immediate execution logic ---
     if settings.SCHEDULER_ENABLED:
-        # Push tasks to Redis pending queue
+        # Push only tasks with empty depends_on to Redis pending queue
         for task in tasks:
-            score = task.created_at.timestamp() * 1000
-            await redis_service.zadd("tasks:pending", task.id, score)
-        logger.info(f"Pushed {len(tasks)} tasks to Redis pending queue")
+            if not task.depends_on:
+                score = task.created_at.timestamp() * 1000
+                await redis_service.zadd("tasks:pending", task.id, score)
+        logger.info(f"Pushed {len([t for t in tasks if not t.depends_on])} tasks to Redis pending queue")
 
         # If auto_spawn is enabled, check for idle agents and assign immediately
         if goal_req.auto_spawn:

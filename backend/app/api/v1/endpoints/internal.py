@@ -33,10 +33,18 @@ class GenerateDeltaRequest(BaseModel):
     agent_id: str
     input: str
     config: Dict[str, Any] = {}
-    system_prompt_override: Optional[str] = None   # <-- NEW
+    system_prompt_override: Optional[str] = None
 
 class GenerateResponse(BaseModel):
     response: str
+
+# ==================== NEW: SPAWN AGENT REQUEST ====================
+class SpawnAgentRequest(BaseModel):
+    hive_id: str
+    required_skill_ids: List[str]
+    agent_type: str
+
+# ===================================================================
 
 async def verify_internal_token(authorization: Optional[str] = Header(None)):
     if not authorization:
@@ -219,3 +227,23 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
     await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
 
     return GenerateResponse(response=response)
+
+# ==================== NEW ENDPOINT: SPAWN AGENT ====================
+@router.post("/agents/spawn", response_model=dict)
+async def spawn_agent(
+    request: SpawnAgentRequest,
+    token: str = Depends(verify_internal_token)
+):
+    """Internal endpoint to spawn a new agent for a task."""
+    from ....services.agent_manager import AgentManager
+    from ....services.docker_service import DockerService
+    docker = DockerService()
+    agent_manager = AgentManager(docker)
+    agent = await agent_manager.spawn_agent_for_task(
+        hive_id=request.hive_id,
+        required_skill_ids=request.required_skill_ids,
+        agent_type=request.agent_type
+    )
+    if not agent:
+        raise HTTPException(status_code=500, detail="Failed to spawn agent")
+    return {"agent_id": agent.id}
