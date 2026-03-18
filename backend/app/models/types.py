@@ -27,6 +27,18 @@ class UserRole(str, Enum):
     HIVE_ADMIN = "HIVE_ADMIN"
     HIVE_USER = "HIVE_USER"
 
+# ==================== NEW AGENT ROLE ENUM ====================
+class AgentRole(str, Enum):
+    GENERIC = "generic"
+    BUILDER = "builder"
+    TESTER = "tester"
+    REVIEWER = "reviewer"
+    FIXER = "fixer"
+    ARCHITECT = "architect"
+    RESEARCHER = "researcher"
+
+# ==============================================================
+
 # Channel types and configurations
 ChannelType = Literal["telegram", "discord", "whatsapp", "slack", "custom"]
 
@@ -100,7 +112,7 @@ class MetaInfo(BaseModel):
 class Agent(BaseModel):
     id: str
     name: str
-    role: str
+    role: AgentRole  # <-- changed from str to AgentRole
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -140,7 +152,7 @@ class Message(BaseModel):
 
 class AgentCreate(BaseModel):
     name: str
-    role: str = "Worker"
+    role: AgentRole = AgentRole.GENERIC  # <-- default to generic
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -158,7 +170,7 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[AgentRole] = None  # <-- changed to AgentRole
     soul_md: Optional[str] = Field(None, alias="soulMd")
     identity_md: Optional[str] = Field(None, alias="identityMd")
     tools_md: Optional[str] = Field(None, alias="toolsMd")
