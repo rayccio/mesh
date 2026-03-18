@@ -42,7 +42,7 @@ class TaskRepository:
             {"hive_id": hive_id}
         )
         rows = result.fetchall()
-        return [HiveTask.model_validate_json(r[0]) for r in rows]
+        return [HiveTask.model_validate(r[0]) for r in rows]   # r[0] is dict
 
     async def get_by_goal_id(self, goal_id: str) -> List[HiveTask]:
         result = await self.db.execute(
@@ -50,7 +50,7 @@ class TaskRepository:
             {"goal_id": goal_id}
         )
         rows = result.fetchall()
-        return [HiveTask.model_validate_json(r[0]) for r in rows]
+        return [HiveTask.model_validate(r[0]) for r in rows]
 
     async def update(self, task_id: str, updates: dict) -> Optional[HiveTask]:
         task = await self.get(task_id)

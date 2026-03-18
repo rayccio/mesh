@@ -11,13 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 import re
 
-# Import role prompts from local constants
-from .constants import (
-    BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
-    TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
-    REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS,
-    FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS
-)
+# Import role prompts from local constants (absolute import)
+import constants
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hivebot-worker")
@@ -183,10 +178,10 @@ TOOLS:
 IMPORTANT: You are NOT a generic AI assistant. You are the entity described above. Always respond in character.
 """
 
-    builder_prompt = make_system_prompt(BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS)
-    tester_prompt = make_system_prompt(TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS)
-    reviewer_prompt = make_system_prompt(REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS)
-    fixer_prompt = make_system_prompt(FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS)
+    builder_prompt = make_system_prompt(constants.BUILDER_SOUL, constants.BUILDER_IDENTITY, constants.BUILDER_TOOLS)
+    tester_prompt = make_system_prompt(constants.TESTER_SOUL, constants.TESTER_IDENTITY, constants.TESTER_TOOLS)
+    reviewer_prompt = make_system_prompt(constants.REVIEWER_SOUL, constants.REVIEWER_IDENTITY, constants.REVIEWER_TOOLS)
+    fixer_prompt = make_system_prompt(constants.FIXER_SOUL, constants.FIXER_IDENTITY, constants.FIXER_TOOLS)
 
     current_code = None
     for iteration in range(1, MAX_ITERATIONS + 1):

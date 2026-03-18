@@ -216,6 +216,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
