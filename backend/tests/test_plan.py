@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import HTTPException
 from datetime import datetime
 from app.api.v1.endpoints.plan import create_plan, GoalRequest
-from app.models.task import Task, TaskStatus
+from app.models.types import HiveTask, HiveTaskStatus
 from app.services.skill_manager import SkillManager
 from app.services.skill_suggestion_manager import SkillSuggestionManager
 
@@ -28,16 +28,23 @@ async def test_create_plan_with_scheduler_enabled():
     with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
         # Mock planner
         mock_planner = AsyncMock()
-        mock_planner.plan.return_value = {
-            "tasks": [
-                {"id": "task1", "description": "Do something", "depends_on": []}
-            ],
-            "reasoning": "ok"
-        }
+        # planner.plan now returns a list of HiveTask
+        mock_task = HiveTask(
+            id="t-test",
+            goal_id="g-test",
+            hive_id="h-test",
+            description="Do something",
+            agent_type="builder",
+            status=HiveTaskStatus.PENDING,
+            depends_on=[],
+            required_skills=[],
+            created_at=datetime.utcnow()
+        )
+        mock_planner.plan.return_value = [mock_task]
+
         with patch('app.api.v1.endpoints.plan.Planner', return_value=mock_planner):
             # Mock task graph creation
-            mock_graph = MagicMock()
-            mock_graph.goal_id = "g-test"
+            mock_graph = {"goal_id": "g-test", "tasks": [mock_task]}
             mock_task_manager.create_task_graph.return_value = mock_graph
 
             # Patch redis zadd and the settings object inside the plan module
@@ -79,13 +86,21 @@ async def test_create_plan_with_scheduler_disabled():
 
     with patch('app.api.v1.endpoints.plan.HiveManager', return_value=mock_hive_manager):
         mock_planner = AsyncMock()
-        mock_planner.plan.return_value = {
-            "tasks": [{"id": "task1", "description": "Do something", "depends_on": []}],
-            "reasoning": "ok"
-        }
+        mock_task = HiveTask(
+            id="t-test",
+            goal_id="g-test",
+            hive_id="h-test",
+            description="Do something",
+            agent_type="builder",
+            status=HiveTaskStatus.PENDING,
+            depends_on=[],
+            required_skills=[],
+            created_at=datetime.utcnow()
+        )
+        mock_planner.plan.return_value = [mock_task]
+
         with patch('app.api.v1.endpoints.plan.Planner', return_value=mock_planner):
-            mock_graph = MagicMock()
-            mock_graph.goal_id = "g-test"
+            mock_graph = {"goal_id": "g-test", "tasks": [mock_task]}
             mock_task_manager.create_task_graph.return_value = mock_graph
 
             mock_settings = MagicMock()
