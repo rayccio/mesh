@@ -25,9 +25,12 @@ async def test_create_goal_api(client: AsyncClient):
     mock_task = HiveTask(
         id="t-test",
         goal_id="g-test",
+        hive_id="h-test",                       # <-- ADDED
         description="Task",
         agent_type="builder",
         status=HiveTaskStatus.PENDING,
+        depends_on=[],
+        required_skills=[],
         created_at=datetime.utcnow()
     )
     mock_planner.plan.return_value = [mock_task]

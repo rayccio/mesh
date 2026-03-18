@@ -41,6 +41,7 @@ async def test_plan_success():
 
         tasks = await planner.plan(
             goal_id="g-test",
+            hive_id="h-test",                      # <-- ADDED
             goal_text="Build a todo app",
             hive_context="context",
             skills=[]
@@ -48,6 +49,7 @@ async def test_plan_success():
 
         assert len(tasks) == 1
         assert tasks[0].goal_id == "g-test"
+        assert tasks[0].hive_id == "h-test"
         assert tasks[0].description == "Write code"
         assert tasks[0].agent_type == "builder"
         assert tasks[0].status == HiveTaskStatus.PENDING
@@ -75,7 +77,12 @@ async def test_plan_fallback_on_failure():
         mock_conn.execute = AsyncMock()
         mock_conn.commit = AsyncMock()
 
-        tasks = await planner.plan("g-test", "Build a todo app")
+        tasks = await planner.plan(
+            goal_id="g-test",
+            hive_id="h-test",                      # <-- ADDED
+            goal_text="Build a todo app"
+        )
         assert len(tasks) == 1
         assert tasks[0].description == "Build a todo app"
         assert tasks[0].agent_type == "builder"
+        assert tasks[0].hive_id == "h-test"
