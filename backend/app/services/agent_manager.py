@@ -430,3 +430,22 @@ class AgentManager:
 
         logger.info(f"Spawned agent {agent.id} (role {role.value}) for hive {hive_id} with skills {required_skill_ids}")
         return agent
+
+    # ==================== NEW: Long‑Term Memory Retrieval ====================
+    async def get_long_term_memory(self, agent_id: str, query: str, limit: int = 5) -> List[str]:
+        """Retrieve relevant long‑term memories for an agent based on a query."""
+        from .vector_service import vector_service
+        from sentence_transformers import SentenceTransformer
+        try:
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            query_vector = model.encode(query).tolist()
+        except Exception as e:
+            logger.error(f"Failed to embed query for memory search: {e}")
+            return []
+        try:
+            results = await vector_service.search_memory(agent_id, query_vector, limit)
+            memories = [r.get("text", "") for r in results if r.get("text")]
+            return memories
+        except Exception as e:
+            logger.error(f"Failed to search memory for agent {agent_id}: {e}")
+            return []

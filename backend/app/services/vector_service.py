@@ -5,6 +5,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 from ..core.config import settings
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,11 @@ class VectorService:
             )
             logger.info(f"Created collection {COLLECTION_NAME}")
 
+    def _generate_point_id(self, text: str, prefix: str = "") -> str:
+        """Generate a stable ID for a given text (to avoid duplicates)."""
+        return hashlib.sha256(f"{prefix}:{text}".encode()).hexdigest()
+
+    # -------------------- Existing search --------------------
     async def search(self, vector: List[float], filter_condition: Optional[models.Filter] = None, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for similar vectors with optional filter."""
         if not self.client:
@@ -58,6 +64,60 @@ class VectorService:
         )
         return [hit.payload for hit in results]
 
+    # -------------------- Memory methods --------------------
+    async def store_memory(self, agent_id: str, text: str, vector: List[float], timestamp: str, source: str = "message") -> bool:
+        """Store a single memory (e.g., a message or summary) in Qdrant."""
+        if not self.client:
+            await self.connect()
+        point_id = self._generate_point_id(text, f"memory_{agent_id}")
+        payload = {
+            "agent_id": agent_id,
+            "text": text,
+            "timestamp": timestamp,
+            "source": source
+        }
+        await self.client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[models.PointStruct(id=point_id, vector=vector, payload=payload)]
+        )
+        logger.debug(f"Stored memory for agent {agent_id}")
+        return True
+
+    async def search_memory(self, agent_id: str, vector: List[float], limit: int = 5) -> List[Dict[str, Any]]:
+        """Search memories for a specific agent."""
+        if not self.client:
+            await self.connect()
+        filter_condition = models.Filter(
+            must=[
+                models.FieldCondition(key="agent_id", match=models.MatchValue(value=agent_id)),
+                models.FieldCondition(key="source", match=models.MatchValue(value="memory"))
+            ]
+        )
+        results = await self.client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=vector,
+            query_filter=filter_condition,
+            limit=limit,
+            with_payload=True
+        )
+        return [hit.payload for hit in results]
+
+    async def delete_memory_by_agent(self, agent_id: str):
+        """Delete all memories for a given agent (e.g., when agent is deleted)."""
+        if not self.client:
+            await self.connect()
+        await self.client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=models.Filter(
+                must=[
+                    models.FieldCondition(key="agent_id", match=models.MatchValue(value=agent_id)),
+                    models.FieldCondition(key="source", match=models.MatchValue(value="memory"))
+                ]
+            )
+        )
+        logger.debug(f"Deleted memories for agent {agent_id}")
+
+    # -------------------- File methods (unchanged) --------------------
     async def delete_by_file(self, file_id: str):
         """Delete all vectors associated with a file."""
         if not self.client:
@@ -73,7 +133,7 @@ class VectorService:
         logger.debug(f"Deleted vectors for file {file_id}")
 
     async def delete_by_agent(self, agent_id: str):
-        """Delete all vectors for a given agent (e.g., when agent is deleted)."""
+        """Delete all vectors for a given agent (including files and memories)."""
         if not self.client:
             await self.connect()
         await self.client.delete(
@@ -84,7 +144,7 @@ class VectorService:
                 ]
             )
         )
-        logger.debug(f"Deleted vectors for agent {agent_id}")
+        logger.debug(f"Deleted all vectors for agent {agent_id}")
 
     async def close(self):
         if self.client:

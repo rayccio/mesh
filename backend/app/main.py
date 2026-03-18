@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from .core.config import settings
 from .api.v1.router import api_router
 from .api.v1.endpoints.ws import router as ws_router
-from .api.v1.endpoints import internal  # <-- IMPORT INTERNAL ROUTER
+from .api.v1.endpoints import internal
 from .services.redis_service import redis_service
 from .services.ws_manager import manager
 from .services.agent_manager import AgentManager
@@ -17,6 +17,7 @@ from .models.types import UserCreate, UserRole, GlobalSettings, AgentUpdate
 from .api.v1.endpoints.bridges import BRIDGE_CONTAINERS
 from .core.database import engine, Base
 from .models import db_models  # noqa
+from sentence_transformers import SentenceTransformer
 import logging
 import asyncio
 import json
@@ -262,7 +263,7 @@ def create_app() -> FastAPI:
                 logger.error(f"Failed to update agent memory: {e}")
 
     async def summarize_agent_memories():
-        """Periodically summarize long conversations using cheap models."""
+        """Periodically summarize long conversations and store in long‑term memory."""
         while True:
             await asyncio.sleep(300)
             try:
@@ -313,6 +314,21 @@ Provide a concise summary (max 100 words) that captures the key points and conte
                         agent.memory.summary = response
                         await agent_manager.update_agent(agent.id, AgentUpdate(memory=agent.memory))
                         logger.info(f"Summarized memory for agent {agent.id}")
+
+                        # --- NEW: Store summary in long‑term memory ---
+                        try:
+                            embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+                            vector = embed_model.encode(response).tolist()
+                            await vector_service.store_memory(
+                                agent_id=agent.id,
+                                text=response,
+                                vector=vector,
+                                timestamp=datetime.utcnow().isoformat(),
+                                source="summary"
+                            )
+                            logger.info(f"Stored summary in long‑term memory for agent {agent.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to store summary for agent {agent.id}: {e}")
                     except Exception as e:
                         logger.error(f"Summarization failed for agent {agent.id}: {e}")
             except Exception as e:

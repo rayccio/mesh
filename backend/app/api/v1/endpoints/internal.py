@@ -108,7 +108,7 @@ async def ai_generate_delta(
     hive_id = agent_hive.id
     hive_config = agent_hive.hive_mind_config
 
-    # --- RAG: retrieve relevant context ---
+    # --- RAG: retrieve relevant context from hive (files and messages) ---
     context_str = ""
     if embedding_model is not None:
         try:
@@ -144,6 +144,15 @@ async def ai_generate_delta(
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
             context_str = ""
+
+    # --- NEW: Get long‑term memories for this agent ---
+    long_term_memories = await agent_manager.get_long_term_memory(agent_id, user_input, limit=3)
+    if long_term_memories:
+        memory_text = "\n\n".join([f"Past memory: {m}" for m in long_term_memories])
+        if context_str:
+            context_str += "\n\n" + memory_text
+        else:
+            context_str = memory_text
 
     global_user_md = agent_hive.global_user_md
 
@@ -223,7 +232,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
 
     await redis_service.trim_conversation(agent_id, keep_last=100)
 
-    # --- Trigger embedding for the new assistant message ---
+    # --- Trigger embedding for the new assistant message (short‑term memory) ---
     await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
 
     return GenerateResponse(response=response)
