@@ -1,12 +1,15 @@
 # backend/app/api/v1/endpoints/goals.py
 from fastapi import APIRouter, HTTPException, Depends, Body
 from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from ....services.goal_engine import GoalEngine
 from ....services.planner import Planner
 from ....services.hive_manager import HiveManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
-from ....models.types import HiveGoal, HiveTask
+from ....core.database import get_db
+from ....models.types import HiveGoal, HiveTask, HiveGoalStatus
 from pydantic import BaseModel
 import logging
 
@@ -70,10 +73,9 @@ async def create_goal(
         )
     except Exception as e:
         logger.error(f"Planning failed for goal {goal.id}: {e}")
-        # Still return goal, but with empty tasks? Better to fail.
         raise HTTPException(status_code=500, detail=f"Planning failed: {str(e)}")
 
-    # Update goal status to PLANNING (or directly to EXECUTING?)
+    # Update goal status to PLANNING
     await goal_engine.update_goal_status(goal.id, HiveGoalStatus.PLANNING)
 
     return GoalResponse(goal=goal, tasks=tasks)
@@ -96,25 +98,21 @@ async def get_goal(
         raise HTTPException(status_code=404, detail="Goal not found")
     return goal
 
-# Optional: endpoint to get tasks for a goal
 @router.get("/{goal_id}/tasks", response_model=List[HiveTask])
 async def get_goal_tasks(
     hive_id: str,
     goal_id: str,
-    db = Depends(...)  # we'll use raw SQL for simplicity
+    db: AsyncSession = Depends(get_db)
 ):
-    # Verify goal belongs to hive (we'll do a quick check)
+    # Verify goal belongs to hive
     goal_engine = GoalEngine()
     goal = await goal_engine.get_goal(goal_id)
     if not goal or goal.hive_id != hive_id:
         raise HTTPException(status_code=404, detail="Goal not found")
 
-    from sqlalchemy import text
-    from ....core.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            text("SELECT data FROM tasks WHERE data->>'goal_id' = :goal_id"),
-            {"goal_id": goal_id}
-        )
-        rows = result.fetchall()
-        return [HiveTask.model_validate_json(r[0]) for r in rows]
+    result = await db.execute(
+        text("SELECT data FROM tasks WHERE data->>'goal_id' = :goal_id"),
+        {"goal_id": goal_id}
+    )
+    rows = result.fetchall()
+    return [HiveTask.model_validate_json(r[0]) for r in rows]
