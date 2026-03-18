@@ -20,4 +20,4 @@ api_router.include_router(agent_skills.router)
 api_router.include_router(meta.router)
 api_router.include_router(evaluation.router)
 api_router.include_router(goals.router)
-api_router.include_router(artifacts.router)   # <-- added
+api_router.include_router(artifacts.router)   # <-- Critical: must be included
