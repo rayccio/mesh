@@ -19,6 +19,7 @@ from ..constants import (
 )
 from .hive_manager import HiveManager
 from .skill_manager import SkillManager
+from .vector_service import vector_service  # <-- already imported
 import uuid
 import shutil
 import logging
@@ -434,7 +435,7 @@ class AgentManager:
     # ==================== NEW: Long‑Term Memory Retrieval ====================
     async def get_long_term_memory(self, agent_id: str, query: str, limit: int = 5) -> List[str]:
         """Retrieve relevant long‑term memories for an agent based on a query."""
-        from .vector_service import vector_service
+        # vector_service is already imported at module level
         from sentence_transformers import SentenceTransformer
         try:
             model = SentenceTransformer("all-MiniLM-L6-v2")
