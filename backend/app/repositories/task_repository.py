@@ -1,15 +1,16 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, text
 from ..models.db_models import TaskModel
-from ..models.task import Task
+from ..models.types import HiveTask
 from ..utils.json_encoder import prepare_json_data
 import json
+from typing import List, Optional
 
 class TaskRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, task: Task) -> Task:
+    async def create(self, task: HiveTask) -> HiveTask:
         data = prepare_json_data(task.model_dump(by_alias=True))
         db_task = TaskModel(
             id=task.id,
@@ -20,25 +21,45 @@ class TaskRepository:
         await self.db.refresh(db_task)
         return task
 
-    async def get(self, task_id: str) -> Task | None:
+    async def get(self, task_id: str) -> Optional[HiveTask]:
         result = await self.db.execute(
             select(TaskModel).where(TaskModel.id == task_id)
         )
         db_task = result.scalar_one_or_none()
         if db_task:
-            return Task(**db_task.data)
+            return HiveTask.model_validate(db_task.data)
         return None
 
-    async def get_all(self) -> list[Task]:
+    async def get_all(self) -> List[HiveTask]:
         result = await self.db.execute(select(TaskModel))
         db_tasks = result.scalars().all()
-        return [Task(**t.data) for t in db_tasks]
+        return [HiveTask.model_validate(t.data) for t in db_tasks]
 
-    async def update(self, task_id: str, updates: dict) -> Task | None:
+    async def get_by_hive_id(self, hive_id: str) -> List[HiveTask]:
+        """Return all tasks belonging to a hive (by checking data->>'hive_id')."""
+        result = await self.db.execute(
+            text("SELECT data FROM tasks WHERE data->>'hive_id' = :hive_id"),
+            {"hive_id": hive_id}
+        )
+        rows = result.fetchall()
+        return [HiveTask.model_validate_json(r[0]) for r in rows]
+
+    async def get_by_goal_id(self, goal_id: str) -> List[HiveTask]:
+        result = await self.db.execute(
+            text("SELECT data FROM tasks WHERE data->>'goal_id' = :goal_id"),
+            {"goal_id": goal_id}
+        )
+        rows = result.fetchall()
+        return [HiveTask.model_validate_json(r[0]) for r in rows]
+
+    async def update(self, task_id: str, updates: dict) -> Optional[HiveTask]:
         task = await self.get(task_id)
         if not task:
             return None
-        data = prepare_json_data(updates)
+        for k, v in updates.items():
+            if hasattr(task, k):
+                setattr(task, k, v)
+        data = prepare_json_data(task.model_dump(by_alias=True))
         await self.db.execute(
             update(TaskModel)
             .where(TaskModel.id == task_id)

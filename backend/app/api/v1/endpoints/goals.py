@@ -67,6 +67,7 @@ async def create_goal(
     try:
         tasks = await planner.plan(
             goal_id=goal.id,
+            hive_id=hive_id,                                 # <-- PASS HIVE_ID
             goal_text=request.description,
             hive_context=hive.global_user_md,
             skills=skills_list

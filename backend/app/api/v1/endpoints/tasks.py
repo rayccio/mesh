@@ -5,7 +5,7 @@ from ....services.task_manager import TaskManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
 from ....services.redis_service import redis_service
-from ....models.task import Task, TaskStatus
+from ....models.types import HiveTask, HiveTaskStatus   # <-- changed
 from datetime import datetime
 import json
 
@@ -21,20 +21,21 @@ async def get_agent_manager():
     docker_service = DockerService()
     return AgentManager(docker_service)
 
-@router.get("", response_model=List[Task])
+@router.get("", response_model=List[HiveTask])
 async def list_tasks(
     hive_id: str,
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     return await task_manager.list_tasks_for_hive(hive_id)
 
-@router.get("/{task_id}", response_model=Task)
+@router.get("/{task_id}", response_model=HiveTask)
 async def get_task(
     hive_id: str,
     task_id: str,
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     task = await task_manager.get_task(task_id)
+    # Verify task belongs to this hive
     if not task or task.hive_id != hive_id:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
@@ -55,8 +56,7 @@ async def assign_task(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Check if task is still pending
-    if task.status != TaskStatus.PENDING:
-        # Use task.status.value for a cleaner error message
+    if task.status != HiveTaskStatus.PENDING:
         raise HTTPException(status_code=400, detail=f"Task is {task.status.value}, cannot assign")
 
     # Perform assignment
@@ -75,7 +75,8 @@ async def assign_task(
         "task_id": task_id,
         "description": task.description,
         "goal_id": task.goal_id,
-        "input_data": task.input_data
+        "input_data": task.input_data,
+        "hive_id": task.hive_id
     }
     await redis_service.publish(f"agent:{agent_id}", message)
 
@@ -94,7 +95,7 @@ async def complete_task(
 
     task = await task_manager.update_task(
         task_id,
-        status=TaskStatus.COMPLETED,
+        status=HiveTaskStatus.COMPLETED,
         output_data=payload.output,
         completed_at=datetime.utcnow()
     )

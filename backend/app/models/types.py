@@ -368,6 +368,7 @@ class HiveTaskStatus(str, Enum):
 class HiveTask(BaseModel):
     id: str
     goal_id: str
+    hive_id: str                               # <-- ADDED
     description: str
     agent_type: str                           # "builder", "tester", "reviewer", etc.
     status: HiveTaskStatus

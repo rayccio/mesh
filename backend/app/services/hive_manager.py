@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..models.types import Hive, HiveCreate, HiveUpdate, Agent, Message, FileEntry
-from ..models.task import TaskStatus
+from ..models.types import HiveTaskStatus  # <-- changed from TaskStatus
 from ..core.config import settings
 from ..core.database import AsyncSessionLocal
 from ..repositories.hive_repository import HiveRepository
@@ -235,7 +235,7 @@ class HiveManager:
         tasks = await task_manager.list_tasks_for_hive(hive_id)
         active_agent_ids = set()
         for t in tasks:
-            if t.status in (TaskStatus.ASSIGNED, TaskStatus.RUNNING) and t.assigned_agent_id:
+            if t.status in (HiveTaskStatus.ASSIGNED, HiveTaskStatus.RUNNING) and t.assigned_agent_id:
                 active_agent_ids.add(t.assigned_agent_id)
         agents = []
         for aid in active_agent_ids:

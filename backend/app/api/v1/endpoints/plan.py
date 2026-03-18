@@ -9,8 +9,7 @@ from ....services.docker_service import DockerService
 from ....services.redis_service import redis_service
 from ....services.skill_manager import SkillManager
 from ....services.skill_suggestion_manager import SkillSuggestionManager
-from ....models.skill import SkillSuggestionCreate
-from ....models.task import Task, TaskStatus
+from ....models.types import HiveTask, HiveTaskStatus   # <-- changed
 from ....services.hive_manager import HiveManager
 from ....core.config import settings
 import uuid
@@ -65,75 +64,45 @@ async def create_plan(
 
     planner = Planner()
     try:
-        plan = await planner.plan(goal_text, context, skills_list)
+        # Note: planner.plan now requires goal_id and hive_id; we'll create a temporary goal_id
+        # This endpoint is deprecated in favor of /goals, but we keep it for now
+        temp_goal_id = f"g-{uuid.uuid4().hex[:8]}"
+        tasks = await planner.plan(
+            goal_id=temp_goal_id,
+            hive_id=hive_id,
+            goal_text=goal_text,
+            hive_context=context,
+            skills=skills_list
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Planning failed: {e}")
 
     # Build name->id mapping for skills
     skill_map = {s["name"].lower(): s["id"] for s in skills_list}
 
-    # Convert plan tasks to Task objects
-    tasks = []
-    task_id_map = {}
+    # Convert plan tasks to HiveTask objects (already done)
+    # We'll just collect missing skills suggestions
     missing_skill_tasks = []
-
-    for t in plan["tasks"]:
-        real_id = f"t-{uuid.uuid4().hex[:8]}"
-        task_id_map[t["id"]] = real_id
-
-        req_skill_names = t.get("required_skills", [])
-        req_skill_ids = []
-        missing_names = []
-        for name in req_skill_names:
-            skill_id = skill_map.get(name.lower())
-            if skill_id:
-                req_skill_ids.append(skill_id)
-            else:
-                missing_names.append(name)
-
-        task = Task(
-            id=real_id,
-            hive_id=hive_id,
-            goal_id="",
-            description=t["description"],
-            status=TaskStatus.PENDING,
-            created_at=datetime.utcnow(),
-            required_skills=req_skill_ids,
-            depends_on=t.get("depends_on", [])
-        )
-        tasks.append(task)
-
+    for task in tasks:
+        # Check for missing skills (skill names not in skill_map)
+        req_skill_names = task.required_skills  # these are names, not IDs
+        missing_names = [name for name in req_skill_names if name.lower() not in skill_map]
         if missing_names:
             missing_skill_tasks.append({
-                "real_id": real_id,
-                "task_dict": t,
+                "real_id": task.id,
+                "task_dict": {"description": task.description},
                 "missing_names": missing_names
             })
 
-    # Build edges and update depends_on
-    edges = []
-    for t in plan["tasks"]:
-        real_id = task_id_map[t["id"]]
-        task_obj = next(task for task in tasks if task.id == real_id)
-        real_deps = []
-        for dep in t.get("depends_on", []):
-            if dep in task_id_map:
-                real_deps.append(task_id_map[dep])
-                edges.append({"from": task_id_map[dep], "to": real_id})
-        task_obj.depends_on = real_deps
-
     # Create graph
-    graph = await task_manager.create_task_graph(hive_id, goal_text, tasks, edges)
-
-    for task in tasks:
-        task.goal_id = graph.goal_id
+    graph = await task_manager.create_task_graph(hive_id, goal_text, tasks, [])  # edges not used
 
     # Create skill suggestions for missing skills
     for item in missing_skill_tasks:
         for name in item["missing_names"]:
             suggestion_in = SkillSuggestionCreate(
                 skill_name=name,
-                goal_id=graph.goal_id,
+                goal_id=graph["goal_id"],
                 goal_description=goal_text,
                 task_id=item["real_id"],
                 task_description=item["task_dict"]["description"],
@@ -160,20 +129,20 @@ async def create_plan(
                 # Collect unique required skills across all tasks
                 all_required_skill_ids = set()
                 for task in tasks:
-                    all_required_skill_ids.update(task.required_skills)
-                # For each required skill, we might need multiple agents; for simplicity, spawn one agent per task
-                # But we'll spawn a pool of agents with the combined skills
-                # We'll use a simple heuristic: spawn one agent that has all required skills (if possible)
-                # In a real system, you'd have a more sophisticated matching.
-                # For now, we'll spawn one agent per task that has its required skills.
+                    # task.required_skills are names, not IDs – need to map to IDs
+                    for name in task.required_skills:
+                        sid = skill_map.get(name.lower())
+                        if sid:
+                            all_required_skill_ids.add(sid)
+                # For each task, spawn an agent (simplified)
                 spawned_agents = []
                 for task in tasks:
                     # Find or create an agent with the required skills
-                    agent = await agent_manager.spawn_agent_for_task(hive_id, task.required_skills)
+                    agent = await agent_manager.spawn_agent_for_task(hive_id, list(all_required_skill_ids), task.agent_type)
                     if agent:
                         spawned_agents.append(agent.id)
                         # Mark as idle
                         await redis_service.sadd("agents:idle", agent.id)
                 logger.info(f"Spawned {len(spawned_agents)} new agents")
 
-    return {"goal_id": graph.goal_id, "tasks": tasks, "edges": edges}
+    return {"goal_id": graph["goal_id"], "tasks": tasks, "edges": []}

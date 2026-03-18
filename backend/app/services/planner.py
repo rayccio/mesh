@@ -17,7 +17,7 @@ class Planner:
     def __init__(self):
         self.model = None  # Will be determined dynamically
 
-    async def plan(self, goal_id: str, goal_text: str, hive_context: Optional[str] = None, skills: Optional[List[Dict]] = None) -> List[HiveTask]:
+    async def plan(self, goal_id: str, hive_id: str, goal_text: str, hive_context: Optional[str] = None, skills: Optional[List[Dict]] = None) -> List[HiveTask]:
         """
         Decompose goal into tasks and dependencies, store them in DB, and return the list.
         """
@@ -114,6 +114,7 @@ Do not include any other text outside the JSON.
                 task = HiveTask(
                     id=real_id,
                     goal_id=goal_id,
+                    hive_id=hive_id,                              # <-- ADDED
                     description=t["description"],
                     agent_type=t.get("agent_type", "builder"),
                     status=HiveTaskStatus.PENDING,
