@@ -67,7 +67,7 @@ async def create_goal(
     try:
         tasks = await planner.plan(
             goal_id=goal.id,
-            hive_id=hive_id,                                 # <-- PASS HIVE_ID
+            hive_id=hive_id,
             goal_text=request.description,
             hive_context=hive.global_user_md,
             skills=skills_list
@@ -116,4 +116,5 @@ async def get_goal_tasks(
         {"goal_id": goal_id}
     )
     rows = result.fetchall()
-    return [HiveTask.model_validate_json(r[0]) for r in rows]
+    # rows[0] is already a dict (JSONB deserialized by asyncpg)
+    return [HiveTask.model_validate(r[0]) for r in rows]
