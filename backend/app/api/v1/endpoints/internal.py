@@ -13,6 +13,7 @@ from ....models.types import ConversationMessage, HiveMindAccessLevel
 from datetime import datetime
 import secrets
 import logging
+import traceback
 from qdrant_client.http import models
 from sentence_transformers import SentenceTransformer
 
@@ -78,130 +79,131 @@ async def ai_generate_delta(
     token: str = Depends(verify_internal_token)
 ):
     logger.info(f"Generate-delta called for agent {request.agent_id}")
-    agent_id = request.agent_id
-    user_input = request.input
-    config = request.config
-    system_override = request.system_prompt_override
 
-    conversation = await redis_service.get_conversation(agent_id, limit=50)
-
-    user_msg = ConversationMessage(
-        role="user",
-        content=user_input,
-        timestamp=datetime.utcnow()
-    )
-    await redis_service.push_conversation_message(agent_id, user_msg)
-
+    # Wrap everything in a try/except to catch and log any exception
     try:
+        agent_id = request.agent_id
+        user_input = request.input
+        config = request.config
+        system_override = request.system_prompt_override
+
+        # Log before Redis calls
+        logger.info(f"Fetching conversation for agent {agent_id} from Redis")
+        conversation = await redis_service.get_conversation(agent_id, limit=50)
+
+        user_msg = ConversationMessage(
+            role="user",
+            content=user_input,
+            timestamp=datetime.utcnow()
+        )
+        await redis_service.push_conversation_message(agent_id, user_msg)
+        logger.info(f"Conversation updated for agent {agent_id}")
+
+        # Get agent from DB
+        logger.info(f"Fetching agent {agent_id} from database...")
         docker_service = DockerService()
         agent_manager = AgentManager(docker_service)
-        logger.info(f"Fetching agent {agent_id} from database...")
         agent = await agent_manager.get_agent(agent_id)
         if not agent:
             logger.error(f"Agent {agent_id} not found in database")
             raise HTTPException(status_code=404, detail="Agent not found")
         logger.info(f"Agent {agent_id} found: {agent.name}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get agent {agent_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration")
 
-    # Get hive_id for this agent
-    from ....services.hive_manager import HiveManager
-    hive_manager = HiveManager(agent_manager)
-    hives = await hive_manager.list_hives()
-    agent_hive = None
-    for hive in hives:
-        if agent.id in [a.id for a in hive.agents]:
-            agent_hive = hive
-            break
-    if not agent_hive:
-        logger.error(f"Agent {agent_id} not associated with any hive")
-        raise HTTPException(status_code=404, detail="Agent not associated with any hive")
+        # Get hive_id for this agent
+        from ....services.hive_manager import HiveManager
+        hive_manager = HiveManager(agent_manager)
+        hives = await hive_manager.list_hives()
+        agent_hive = None
+        for hive in hives:
+            if agent.id in [a.id for a in hive.agents]:
+                agent_hive = hive
+                break
+        if not agent_hive:
+            logger.error(f"Agent {agent_id} not associated with any hive")
+            raise HTTPException(status_code=404, detail="Agent not associated with any hive")
 
-    hive_id = agent_hive.id
-    hive_config = agent_hive.hive_mind_config
+        hive_id = agent_hive.id
+        hive_config = agent_hive.hive_mind_config
 
-    # --- RAG: retrieve relevant context from hive (files and messages) ---
-    context_str = ""
-    if embedding_model is not None:
-        try:
-            query_vector = embedding_model.encode(user_input).tolist()
-            # Determine which hive_ids to search
-            search_hive_ids = [hive_id]
-            if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
-                search_hive_ids.extend(hive_config.sharedHiveIds)
-            elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
-                search_hive_ids = [h.id for h in hives]
+        # --- RAG: retrieve relevant context from hive (files and messages) ---
+        context_str = ""
+        if embedding_model is not None:
+            try:
+                query_vector = embedding_model.encode(user_input).tolist()
+                # Determine which hive_ids to search
+                search_hive_ids = [hive_id]
+                if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
+                    search_hive_ids.extend(hive_config.sharedHiveIds)
+                elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
+                    search_hive_ids = [h.id for h in hives]
 
-            filter_condition = models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="hive_id",
-                        match=models.MatchAny(any=search_hive_ids)
-                    )
-                ]
-            )
-
-            retrieved = await vector_service.search(query_vector, filter_condition, limit=5)
-            context_blocks = []
-            for item in retrieved:
-                source = item.get("source", "unknown")
-                text = item.get("text", "")
-                if source == "message":
-                    context_blocks.append(f"Previous conversation: {text}")
-                elif source == "file":
-                    context_blocks.append(f"File excerpt: {text}")
-                else:
-                    context_blocks.append(text)
-            context_str = "\n\n".join(context_blocks) if context_blocks else ""
-        except Exception as e:
-            logger.error(f"Vector search failed: {e}")
-            context_str = ""
-
-    # --- NEW: Get long‑term memories for this agent ---
-    long_term_memories = await agent_manager.get_long_term_memory(agent_id, user_input, limit=3)
-    if long_term_memories:
-        memory_text = "\n\n".join([f"Past memory: {m}" for m in long_term_memories])
-        if context_str:
-            context_str += "\n\n" + memory_text
-        else:
-            context_str = memory_text
-
-    global_user_md = agent_hive.global_user_md
-
-    # Build sub-agents list
-    sub_agents_info = []
-    if agent.sub_agent_ids:
-        for sub_id in agent.sub_agent_ids:
-            sub_agent = await agent_manager.get_agent(sub_id)
-            if sub_agent:
-                identity_full = sub_agent.identity_md.strip()
-                soul_full = sub_agent.soul_md.strip()
-                sub_agents_info.append(
-                    f"- ID: {sub_agent.id}, Name: {sub_agent.name}, Role: {sub_agent.role}\n"
-                    f"  Identity:\n{identity_full}\n"
-                    f"  Soul:\n{soul_full}"
+                filter_condition = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="hive_id",
+                            match=models.MatchAny(any=search_hive_ids)
+                        )
+                    ]
                 )
-    if sub_agents_info:
-        sub_agents_text = "CURRENT SUB-AGENTS (full context):\n" + "\n\n".join(sub_agents_info)
-    else:
-        sub_agents_text = "CURRENT SUB-AGENTS: None."
 
-    communication_instruction = (
-        "IMPORTANT: If a user asks you to pass a message to another agent (e.g., 'Give this code to CoS'), "
-        "you should forward the message to that agent. Use the following method:\n"
-        "- If you have a tool like `send_message` or `outbound-notifier`, use it with destination='agent:<ID>'.\n"
-        "- Otherwise, respond with a special prefix 'FORWARD: <target_id> <message>' and the orchestrator will handle it.\n"
-        "If you are unsure, ask the user to specify the target agent and the channel (if needed)."
-    )
+                retrieved = await vector_service.search(query_vector, filter_condition, limit=5)
+                context_blocks = []
+                for item in retrieved:
+                    source = item.get("source", "unknown")
+                    text = item.get("text", "")
+                    if source == "message":
+                        context_blocks.append(f"Previous conversation: {text}")
+                    elif source == "file":
+                        context_blocks.append(f"File excerpt: {text}")
+                    else:
+                        context_blocks.append(text)
+                context_str = "\n\n".join(context_blocks) if context_blocks else ""
+            except Exception as e:
+                logger.error(f"Vector search failed: {e}")
+                context_str = ""
 
-    # Use system override if provided, otherwise build from agent data
-    if system_override:
-        system_content = system_override
-    else:
-        system_content = f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly and not default to generic AI responses.
+        # --- NEW: Get long‑term memories for this agent ---
+        long_term_memories = await agent_manager.get_long_term_memory(agent_id, user_input, limit=3)
+        if long_term_memories:
+            memory_text = "\n\n".join([f"Past memory: {m}" for m in long_term_memories])
+            if context_str:
+                context_str += "\n\n" + memory_text
+            else:
+                context_str = memory_text
+
+        global_user_md = agent_hive.global_user_md
+
+        # Build sub-agents list
+        sub_agents_info = []
+        if agent.sub_agent_ids:
+            for sub_id in agent.sub_agent_ids:
+                sub_agent = await agent_manager.get_agent(sub_id)
+                if sub_agent:
+                    identity_full = sub_agent.identity_md.strip()
+                    soul_full = sub_agent.soul_md.strip()
+                    sub_agents_info.append(
+                        f"- ID: {sub_agent.id}, Name: {sub_agent.name}, Role: {sub_agent.role}\n"
+                        f"  Identity:\n{identity_full}\n"
+                        f"  Soul:\n{soul_full}"
+                    )
+        if sub_agents_info:
+            sub_agents_text = "CURRENT SUB-AGENTS (full context):\n" + "\n\n".join(sub_agents_info)
+        else:
+            sub_agents_text = "CURRENT SUB-AGENTS: None."
+
+        communication_instruction = (
+            "IMPORTANT: If a user asks you to pass a message to another agent (e.g., 'Give this code to CoS'), "
+            "you should forward the message to that agent. Use the following method:\n"
+            "- If you have a tool like `send_message` or `outbound-notifier`, use it with destination='agent:<ID>'.\n"
+            "- Otherwise, respond with a special prefix 'FORWARD: <target_id> <message>' and the orchestrator will handle it.\n"
+            "If you are unsure, ask the user to specify the target agent and the channel (if needed)."
+        )
+
+        # Use system override if provided, otherwise build from agent data
+        if system_override:
+            system_content = system_override
+        else:
+            system_content = f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly and not default to generic AI responses.
 
 IDENTITY (MANDATORY):
 {agent.identity_md}
@@ -225,35 +227,45 @@ RELEVANT RETRIEVED KNOWLEDGE:
 IMPORTANT: You are NOT a generic AI assistant. You are the entity described above. Always respond in character. Never say you are ChatGPT or a generic language model. When asked about your sub‑agents, only mention the agents listed above. Do not invent additional agents.
 """
 
-    messages = [{"role": "system", "content": system_content}]
-    for msg in conversation:
-        messages.append({"role": msg.role, "content": msg.content})
-    messages.append({"role": "user", "content": user_input})
+        messages = [{"role": "system", "content": system_content}]
+        for msg in conversation:
+            messages.append({"role": msg.role, "content": msg.content})
+        messages.append({"role": "user", "content": user_input})
 
-    logger.info(f"System message for agent {agent_id}: {system_content[:200]}...")
+        logger.info(f"System message for agent {agent_id}: {system_content[:200]}...")
 
-    try:
-        logger.info(f"Calling generate_with_messages for agent {agent_id}")
-        response = await generate_with_messages(messages, config)
-        logger.info(f"AI generation successful for agent {agent_id}")
+        try:
+            logger.info(f"Calling generate_with_messages for agent {agent_id}")
+            response = await generate_with_messages(messages, config)
+            logger.info(f"AI generation successful for agent {agent_id}")
+        except Exception as e:
+            logger.exception("AI generation failed")
+            raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+        assistant_msg = ConversationMessage(
+            role="assistant",
+            content=response,
+            timestamp=datetime.utcnow()
+        )
+        await redis_service.push_conversation_message(agent_id, assistant_msg)
+
+        await redis_service.trim_conversation(agent_id, keep_last=100)
+
+        # --- Trigger embedding for the new assistant message (short‑term memory) ---
+        await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
+
+        logger.info(f"Generate-delta completed for agent {agent_id}")
+        return GenerateResponse(response=response)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are (they already have the desired status code)
+        raise
     except Exception as e:
-        logger.exception("AI generation failed")
-        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
-
-    assistant_msg = ConversationMessage(
-        role="assistant",
-        content=response,
-        timestamp=datetime.utcnow()
-    )
-    await redis_service.push_conversation_message(agent_id, assistant_msg)
-
-    await redis_service.trim_conversation(agent_id, keep_last=100)
-
-    # --- Trigger embedding for the new assistant message (short‑term memory) ---
-    await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
-
-    logger.info(f"Generate-delta completed for agent {agent_id}")
-    return GenerateResponse(response=response)
+        # Log the full traceback for any other exception
+        logger.error(f"Unhandled exception in generate-delta for agent {request.agent_id}: {e}")
+        logger.error(traceback.format_exc())
+        # Return a 500 error
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # ==================== NEW ENDPOINT: SPAWN AGENT ====================
 @router.post("/agents/spawn", response_model=dict)
