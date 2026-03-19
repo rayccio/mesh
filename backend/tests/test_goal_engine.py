@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock   # <-- added MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.goal_engine import GoalEngine
 from app.models.types import HiveGoalStatus
 from datetime import datetime
@@ -45,7 +45,7 @@ async def test_get_goal():
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
         mock_result = MagicMock()
-        mock_result.fetchone.return_value = (json.dumps(mock_goal_data),)
+        mock_result.fetchone.return_value = (mock_goal_data,)  # dict, not string
         mock_conn.execute.return_value = mock_result
 
         goal = await engine.get_goal("g-123")
@@ -68,6 +68,6 @@ async def test_update_goal_status():
         updated = await engine.update_goal_status("g-123", HiveGoalStatus.COMPLETED)
         assert updated is not None
         mock_goal.status = HiveGoalStatus.COMPLETED
-        mock_goal.completed_at = datetime.utcnow()  # approximate
+        mock_goal.completed_at = datetime.utcnow()
         mock_conn.execute.assert_awaited_once()
         mock_conn.commit.assert_awaited_once()

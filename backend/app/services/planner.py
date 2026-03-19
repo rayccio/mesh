@@ -1,4 +1,3 @@
-# backend/app/services/planner.py
 import logging
 import json
 import re
@@ -37,10 +36,12 @@ class Planner:
 
         # Build skills list for prompt
         skills_text = ""
+        skill_map = {}  # name -> id
         if skills:
             skills_lines = ["Available skills:"]
             for s in skills:
                 skills_lines.append(f"- {s['name']}: {s['description']}")
+                skill_map[s['name'].lower()] = s['id']
             skills_text = "\n".join(skills_lines) + "\n\n"
 
         system_prompt = f"""You are an AI task planner for a multi-agent system. Your job is to break down a user's goal into a set of discrete tasks that can be executed by autonomous agents (bots). Each task should be self‑contained and have clear inputs and outputs. Also identify dependencies between tasks.
@@ -85,7 +86,6 @@ Do not include any other text outside the JSON.
         config = {"model": primary_model_id, "temperature": 0.2, "max_tokens": 1500}
         try:
             response = await generate_with_messages(messages, config)
-            # Extract JSON from response
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if not json_match:
                 raise ValueError("No JSON found in planner response")
@@ -95,7 +95,6 @@ Do not include any other text outside the JSON.
                 raise ValueError("No tasks in planner response")
         except Exception as e:
             logger.error(f"Planning failed: {e}")
-            # Fallback: create a single task
             tasks_dict = [{
                 "id": "task_1",
                 "description": goal_text,
@@ -103,6 +102,19 @@ Do not include any other text outside the JSON.
                 "depends_on": [],
                 "required_skills": []
             }]
+
+        # Convert skill names to IDs
+        for t in tasks_dict:
+            skill_names = t.get("required_skills", [])
+            skill_ids = []
+            for name in skill_names:
+                sid = skill_map.get(name.lower())
+                if sid:
+                    skill_ids.append(sid)
+                else:
+                    # Keep the name as a placeholder – will be handled by skill suggestions
+                    skill_ids.append(name)
+            t["required_skills"] = skill_ids
 
         # Convert to HiveTask objects and store in DB
         tasks = []
@@ -114,32 +126,28 @@ Do not include any other text outside the JSON.
                 task = HiveTask(
                     id=real_id,
                     goal_id=goal_id,
-                    hive_id=hive_id,                              # <-- ADDED
+                    hive_id=hive_id,
                     description=t["description"],
                     agent_type=t.get("agent_type", "builder"),
                     status=HiveTaskStatus.PENDING,
                     depends_on=[],  # will fill after all created
-                    required_skills=t.get("required_skills", []),
+                    required_skills=t.get("required_skills", []),  # now IDs
                     created_at=datetime.utcnow()
                 )
                 tasks.append(task)
-                # Insert into DB
                 await session.execute(
                     text("INSERT INTO tasks (id, data) VALUES (:id, :data)"),
                     {"id": real_id, "data": task.model_dump_json()}
                 )
 
-            # Now update depends_on with real IDs
             for i, t in enumerate(tasks_dict):
                 real_deps = [task_id_map[dep] for dep in t.get("depends_on", []) if dep in task_id_map]
                 tasks[i].depends_on = real_deps
-                # Update DB
                 await session.execute(
                     text("UPDATE tasks SET data = :data WHERE id = :id"),
                     {"id": tasks[i].id, "data": tasks[i].model_dump_json()}
                 )
 
-            # Store edges in task_edges table
             for from_task, to_task in [(dep, task_id_map[t["id"]]) for t in tasks_dict for dep in t.get("depends_on", []) if dep in task_id_map]:
                 await session.execute(
                     text("INSERT INTO task_edges (from_task, to_task) VALUES (:from, :to) ON CONFLICT DO NOTHING"),

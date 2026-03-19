@@ -9,7 +9,6 @@ from pathlib import Path
 
 @pytest.mark.asyncio
 async def test_create_artifact(tmp_path):
-    # Override base_path with temporary directory
     service = ArtifactService()
     service.base_path = Path(tmp_path) / "artifacts"
     service.base_path.mkdir(parents=True, exist_ok=True)
@@ -17,7 +16,6 @@ async def test_create_artifact(tmp_path):
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        # Mock _get_next_version to return 1
         service._get_next_version = AsyncMock(return_value=1)
 
         content = b"test content"
@@ -35,7 +33,6 @@ async def test_create_artifact(tmp_path):
         assert artifact.file_path == "test.txt"
         assert artifact.version == 1
         assert artifact.status == "draft"
-        # Check that file was written
         artifact_file = service.base_path / artifact.id
         assert artifact_file.exists()
         assert artifact_file.read_bytes() == content
@@ -58,9 +55,9 @@ async def test_get_artifact():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        # fetchone is a synchronous method on the mock result object
         mock_result = MagicMock()
-        mock_result.fetchone.return_value = (json.dumps(mock_data),)
+        # Return a dict, not a JSON string
+        mock_result.fetchone.return_value = (mock_data,)
         mock_conn.execute.return_value = mock_result
 
         artifact = await service.get_artifact("art-123")
@@ -83,9 +80,8 @@ async def test_list_artifacts():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        # fetchall is synchronous
         mock_result = MagicMock()
-        mock_result.fetchall.return_value = [(json.dumps(d),) for d in mock_data]
+        mock_result.fetchall.return_value = [(mock_data[0],)]  # dict, not string
         mock_conn.execute.return_value = mock_result
 
         artifacts = await service.list_artifacts("g-test")

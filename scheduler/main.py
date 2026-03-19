@@ -100,7 +100,7 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
     """Fetch all tasks for a goal."""
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT data FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
+            "SELECT data FROM tasks WHERE data->>'goalId' = $1",
             goal_id
         )
         tasks = []
@@ -113,10 +113,9 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
 
 async def fetch_task_edges(pg_pool, goal_id):
     """Fetch all edges for tasks of a goal."""
-    # Get all task IDs for this goal
     async with pg_pool.acquire() as conn:
         task_ids = await conn.fetch(
-            "SELECT id FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
+            "SELECT id FROM tasks WHERE data->>'goalId' = $1",
             goal_id
         )
         task_ids = [t['id'] for t in task_ids]
@@ -249,9 +248,8 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
 
     # Check if goal is complete
     async with pg_pool.acquire() as conn:
-        # Get all tasks for this goal
         rows = await conn.fetch(
-            "SELECT data FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
+            "SELECT data FROM tasks WHERE data->>'goalId' = $1",
             goal_id
         )
         all_tasks = []
@@ -261,7 +259,6 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
                 data = json.loads(data)
             all_tasks.append(data)
         if all(t.get('status') == 'completed' for t in all_tasks):
-            # Update goal status
             await conn.execute(
                 "UPDATE goals SET data = jsonb_set(data, '{status}', '\"completed\"') WHERE id = $1",
                 goal_id
@@ -272,12 +269,15 @@ async def orchestrator_loop(pg_pool, redis_client):
     """Main orchestrator loop: process goals and assign tasks."""
     while True:
         try:
+            logger.debug("Orchestrator loop iteration")
             # Fetch all goals that are planning or executing
             goals = await fetch_goals(pg_pool, ["planning", "executing"])
+            logger.debug(f"Fetched {len(goals)} goals")
             for goal in goals:
                 goal_id = goal['id']
                 # Fetch all tasks for this goal
                 tasks = await fetch_tasks_for_goal(pg_pool, goal_id)
+                logger.debug(f"Goal {goal_id} has {len(tasks)} tasks")
                 # Build task map
                 task_map = {t['id']: t for t in tasks}
                 # Find ready tasks (pending and dependencies satisfied)
@@ -288,13 +288,14 @@ async def orchestrator_loop(pg_pool, redis_client):
                     if await are_dependencies_met(pg_pool, t['id'], t.get('depends_on', [])):
                         ready_tasks.append(t)
 
+                logger.debug(f"Goal {goal_id} has {len(ready_tasks)} ready tasks")
                 for task in ready_tasks:
                     # Try to find an idle agent with required skills
                     required_skills = task.get('required_skills', [])
                     # Get idle agents from Redis
                     idle_agent_ids = await redis_client.smembers("agents:idle")
                     if not idle_agent_ids:
-                        # No idle agents, spawn one
+                        logger.info(f"No idle agents, spawning new agent for task {task['id']}")
                         agent_id = await spawn_agent_for_task(
                             goal['hive_id'],
                             required_skills,
@@ -322,9 +323,10 @@ async def orchestrator_loop(pg_pool, redis_client):
                                     matching_agent = agent_id
                                     break
                             if matching_agent:
+                                logger.info(f"Assigning task {task['id']} to existing agent {matching_agent}")
                                 await assign_task(pg_pool, redis_client, task, matching_agent)
                             else:
-                                # No matching idle agent, spawn one
+                                logger.info(f"No matching idle agent, spawning new for task {task['id']}")
                                 agent_id = await spawn_agent_for_task(
                                     goal['hive_id'],
                                     required_skills,
@@ -334,7 +336,6 @@ async def orchestrator_loop(pg_pool, redis_client):
                                     await assign_task(pg_pool, redis_client, task, agent_id)
                                 else:
                                     logger.warning(f"Failed to spawn agent for task {task['id']}")
-
         except Exception as e:
             logger.exception("Error in orchestrator loop")
         await asyncio.sleep(ORCHESTRATOR_INTERVAL)
