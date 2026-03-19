@@ -95,11 +95,16 @@ async def ai_generate_delta(
     try:
         docker_service = DockerService()
         agent_manager = AgentManager(docker_service)
+        logger.info(f"Fetching agent {agent_id} from database...")
         agent = await agent_manager.get_agent(agent_id)
         if not agent:
+            logger.error(f"Agent {agent_id} not found in database")
             raise HTTPException(status_code=404, detail="Agent not found")
+        logger.info(f"Agent {agent_id} found: {agent.name}")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to get agent {agent_id}: {e}")
+        logger.error(f"Failed to get agent {agent_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration")
 
     # Get hive_id for this agent
@@ -112,6 +117,7 @@ async def ai_generate_delta(
             agent_hive = hive
             break
     if not agent_hive:
+        logger.error(f"Agent {agent_id} not associated with any hive")
         raise HTTPException(status_code=404, detail="Agent not associated with any hive")
 
     hive_id = agent_hive.id
@@ -227,7 +233,9 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
     logger.info(f"System message for agent {agent_id}: {system_content[:200]}...")
 
     try:
+        logger.info(f"Calling generate_with_messages for agent {agent_id}")
         response = await generate_with_messages(messages, config)
+        logger.info(f"AI generation successful for agent {agent_id}")
     except Exception as e:
         logger.exception("AI generation failed")
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
@@ -244,6 +252,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
     # --- Trigger embedding for the new assistant message (short‑term memory) ---
     await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
 
+    logger.info(f"Generate-delta completed for agent {agent_id}")
     return GenerateResponse(response=response)
 
 # ==================== NEW ENDPOINT: SPAWN AGENT ====================
