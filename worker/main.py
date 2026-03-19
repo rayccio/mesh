@@ -73,7 +73,7 @@ async def register_agent_idle(agent_id: str):
     except Exception as e:
         logger.error(f"Failed to register agent {agent_id} as idle: {e}")
 
-async def call_ai_delta(agent_id, user_input, model_config, system_prompt_override=None):
+async def call_ai_delta(agent_id, user_input, model_config, system_prompt_override=None, retries=1):
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/generate-delta"
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_KEY}",
@@ -86,20 +86,29 @@ async def call_ai_delta(agent_id, user_input, model_config, system_prompt_overri
         "system_prompt_override": system_prompt_override
     }
     async with httpx.AsyncClient() as client:
-        try:
-            logger.info(f"Calling AI endpoint: {url}")
-            logger.debug(f"Payload: {payload}")
-            resp = await client.post(url, json=payload, headers=headers, timeout=60)
-            logger.info(f"AI response status: {resp.status_code}")
-            if resp.status_code != 200:
-                logger.error(f"Response body: {resp.text}")
-            resp.raise_for_status()
-            return resp.json()["response"]
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error: {e}")
-            if e.response.status_code == 404:
-                logger.error(f"404 response body: {e.response.text}")
-            raise
+        for attempt in range(retries + 1):
+            try:
+                logger.info(f"Calling AI endpoint (attempt {attempt+1}): {url}")
+                logger.debug(f"Payload: {payload}")
+                resp = await client.post(url, json=payload, headers=headers, timeout=60)
+                logger.info(f"AI response status: {resp.status_code}")
+                if resp.status_code == 404:
+                    logger.error(f"404 response body: {resp.text}")
+                    if attempt < retries:
+                        logger.info(f"Retrying in 0.5 seconds...")
+                        await asyncio.sleep(0.5)
+                        continue
+                    else:
+                        raise httpx.HTTPStatusError(f"404 after {retries} retries", request=resp.request, response=resp)
+                resp.raise_for_status()
+                return resp.json()["response"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404 and attempt < retries:
+                    logger.info(f"404, retrying in 0.5 seconds...")
+                    await asyncio.sleep(0.5)
+                    continue
+                else:
+                    raise
 
 def parse_tool_calls(ai_response: str) -> list:
     pattern = r'\{.*?\}'
@@ -192,7 +201,8 @@ async def execute_task_with_loop(agent_id, task_id, description, input_data, goa
             agent_id,
             user_prompt,
             reasoning_config,
-            system_prompt_override=role_prompt
+            system_prompt_override=role_prompt,
+            retries=1  # one retry on 404
         )
 
     # Combine soul, identity, tools into a single system prompt
@@ -302,7 +312,7 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         tools_md = agent_data.get("tools_md", "")
         allowed_tools = parse_allowed_tools(tools_md)
 
-        response = await call_ai_delta(agent_id, user_input, model_config)
+        response = await call_ai_delta(agent_id, user_input, model_config, retries=1)
         logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
 
         # Parse and execute tool calls
@@ -373,6 +383,9 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
 
 async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
     try:
+        # Small delay to ensure agent is fully committed
+        await asyncio.sleep(0.5)
+
         agent_data = await get_agent_from_db(agent_id)
         if not agent_data:
             logger.error(f"Agent {agent_id} not found in DB")
