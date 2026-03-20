@@ -6,16 +6,17 @@ from typing import Dict, Any
 from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis.asyncio as redis
+from pathlib import Path
 
-LOG_DIR = "/app/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
+# Configure logging to file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(f"{LOG_DIR}/simulator.log")
+        logging.FileHandler(LOG_DIR / "simulator.log")
     ]
 )
 logger = logging.getLogger("simulator")
@@ -44,7 +45,6 @@ async def mock_ssh_execute(request: Request):
     payload = await request.json()
     command = payload.get("command", "")
     logger.info(f"Mock SSH execute: {command}")
-    # Return simulated output
     return {
         "stdout": f"Simulated output for command: {command}",
         "stderr": "",

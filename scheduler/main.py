@@ -7,16 +7,17 @@ import json
 import httpx
 from datetime import datetime, timedelta
 from aiohttp import web
+from pathlib import Path
 
-LOG_DIR = "/app/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
+# Configure logging to file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(f"{LOG_DIR}/scheduler.log")
+        logging.FileHandler(LOG_DIR / "scheduler.log")
     ]
 )
 logger = logging.getLogger("hive-core")
@@ -85,7 +86,6 @@ async def populate_pending_tasks(pg_pool, redis_client):
         rows = await conn.fetch("SELECT id, data, created_at FROM tasks WHERE data->>'status' = 'pending'")
         logger.info(f"Found {len(rows)} pending tasks in DB")
         for row in rows:
-            # Log first task keys for debugging
             if rows.index(row) == 0:
                 task_data = row['data']
                 if isinstance(task_data, str):
@@ -137,7 +137,6 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
             if rows:
                 logger.debug(f"Found {len(rows)} tasks using key 'goal_id' for goal {goal_id}")
             else:
-                # No tasks found – log the keys of a sample task if any exist
                 sample = await conn.fetch("SELECT data FROM tasks LIMIT 1")
                 if sample:
                     sample_data = sample[0]['data']
@@ -171,7 +170,6 @@ async def are_dependencies_met(pg_pool, task_id, depends_on):
 
 async def spawn_agent_for_task(hive_id, required_skill_ids, agent_type):
     """Call internal API to spawn an agent."""
-    # Correct URL includes /ai/ after /internal/
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/agents/spawn"
     headers = {"Authorization": f"Bearer {INTERNAL_API_KEY}"}
     payload = {
@@ -441,6 +439,7 @@ async def maintenance_loop(pg_pool, redis_client):
                         else:
                             agent_data = raw_agent
                         agent_data['status'] = 'ERROR'
+                        agent_data['last_active'] = datetime.utcnow().isoformat()
                         await conn.execute(
                             "UPDATE agents SET data = $1 WHERE id = $2",
                             json.dumps(agent_data), agent_id

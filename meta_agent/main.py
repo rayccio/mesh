@@ -10,16 +10,17 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
+from pathlib import Path
 
-LOG_DIR = "/app/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
+# Configure logging to file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(f"{LOG_DIR}/meta-agent.log")
+        logging.FileHandler(LOG_DIR / "meta_agent.log")
     ]
 )
 logger = logging.getLogger("meta-agent")
@@ -147,7 +148,6 @@ def generate_goal_id():
 async def get_agent_performance(agent_id: str, hours: int = EVALUATION_PERIOD_HOURS):
     since = datetime.utcnow() - timedelta(hours=hours)
     async with AsyncSessionLocal() as session:
-        # Ensure 'since' is a datetime object (defensive)
         if isinstance(since, str):
             since = datetime.fromisoformat(since)
         result = await session.execute(
@@ -192,28 +192,21 @@ async def run_task_and_wait(agent_id: str, goal_id: str, task_description: str, 
     import uuid
     task_id = f"t-{uuid.uuid4().hex[:8]}"
     
-    # Connect to Redis
     redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
-    
-    # Create a unique completion channel for this task
     completion_channel = f"task:{goal_id}:completed"
-    
-    # Subscribe to the completion channel before publishing to avoid race
     pubsub = redis_client.pubsub()
     await pubsub.subscribe(completion_channel)
     
-    # Publish task_assign message
     message = {
         "type": "task_assign",
         "task_id": task_id,
         "description": task_description,
         "input_data": input_data,
         "goal_id": goal_id,
-        "simulation": True  # always run evaluation tasks in simulation mode
+        "simulation": True
     }
     await redis_client.publish(f"agent:{agent_id}", json.dumps(message))
     
-    # Wait for completion message
     start = datetime.utcnow()
     async for msg in pubsub.listen():
         if msg["type"] != "message":

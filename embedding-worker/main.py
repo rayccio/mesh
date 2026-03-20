@@ -9,16 +9,17 @@ from sentence_transformers import SentenceTransformer
 import httpx
 from typing import List, Dict, Any
 import hashlib
+from pathlib import Path
 
-LOG_DIR = "/app/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
+# Configure logging to file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(f"{LOG_DIR}/embedding-worker.log")
+        logging.FileHandler(LOG_DIR / "embedding-worker.log")
     ]
 )
 logger = logging.getLogger("embedding-worker")
@@ -113,7 +114,7 @@ async def process_file_task(file_path: str, hive_id: str, file_id: str, agent_id
             "chunk_index": i,
             "text": chunk,
             "source": "file",
-            "agent_id": agent_id  # None for hive files
+            "agent_id": agent_id
         }
         points.append(models.PointStruct(id=point_id, vector=vector, payload=payload))
     if points:
