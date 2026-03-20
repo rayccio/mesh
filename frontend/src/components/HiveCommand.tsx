@@ -75,11 +75,31 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
       const iter = log.iteration ? `(iter ${log.iteration})` : '';
       return `[${timestamp}] ${level} ${task} ${iter} ${log.message}`;
     }).join('\n');
-    navigator.clipboard.writeText(logText).then(() => {
+
+    // Try modern clipboard API first, fall back to execCommand
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(logText).then(() => {
+        toast.success('Logs copied to clipboard');
+      }).catch(() => {
+        fallbackCopy(logText);
+      });
+    } else {
+      fallbackCopy(logText);
+    }
+  };
+
+  const fallbackCopy = (text: string) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    const success = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (success) {
       toast.success('Logs copied to clipboard');
-    }).catch(() => {
+    } else {
       toast.error('Failed to copy logs');
-    });
+    }
   };
   // ========================================================
 
