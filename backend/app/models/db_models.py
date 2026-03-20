@@ -75,7 +75,7 @@ class UserModel(Base):
 class GlobalSettingsModel(Base):
     __tablename__ = "global_settings"
 
-    id = Column(Integer, primary_key=True, default=1)  # singleton
+    id = Column(Integer, primary_key=True, default=1)
     data = Column(JSONB, nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -89,8 +89,7 @@ class EvaluationTaskModel(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# ==================== NEW MODELS FOR PHASE 1 & 2 ====================
-
+# New models
 class GoalModel(Base):
     __tablename__ = "goals"
 
@@ -112,8 +111,6 @@ class TaskEdgeModel(Base):
 
     from_task = Column(String, primary_key=True)
     to_task = Column(String, primary_key=True)
-
-# ==================== ECONOMY TABLES ====================
 
 class EconomyAccountModel(Base):
     __tablename__ = "economy_accounts"
@@ -146,8 +143,6 @@ class RiskPolicyModel(Base):
     data = Column(JSONB, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-# ==================== EXECUTION LOGS TABLE ====================
 
 class ExecutionLogModel(Base):
     __tablename__ = "execution_logs"
