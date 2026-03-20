@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'react-hot-toast';
 import { Agent, AgentStatus, ReportingTarget, Message, FileEntry, AgentCreate, Hive, HiveCreate, HiveUpdate, HiveMindConfig, HiveMindAccessLevel, UserAccount, GlobalSettings, UserRole } from './types';
 import { INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS, INITIAL_USER_MD, Icons } from './constants';
 import { Sidebar } from './components/Sidebar';
@@ -601,6 +602,7 @@ const AppContent: React.FC = () => {
   return (
     <ErrorBoundary>
       <div className="flex h-screen bg-zinc-950 overflow-hidden select-none text-zinc-100 font-sans relative">
+        <Toaster position="top-center" />
         <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity lg:hidden ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)} />
         
         <div className={`fixed lg:relative inset-y-0 left-0 z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>

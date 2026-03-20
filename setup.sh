@@ -393,6 +393,9 @@ docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "$
 # NEW: Migrate hives to add agentIds field
 echo -e "${YELLOW}🔄 Migrating hives to include agentIds...${NC}"
 docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py || echo -e "${RED}❌ Hive migration failed, but continuing...${NC}"
+# NEW: Convert JSON columns to JSONB
+echo -e "${YELLOW}🔄 Converting JSON columns to JSONB...${NC}"
+docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo -e "${RED}❌ JSONB conversion failed, but continuing...${NC}"
 
 # --- 13. Final status ---
 clear

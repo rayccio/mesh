@@ -1,4 +1,3 @@
-# backend/app/main.py
 import logging
 import os
 from pathlib import Path
@@ -138,6 +137,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         logger.info("Starting up HiveBot Orchestrator...")
+        logger.info(f"CORS origins: {settings.cors_origins}")
         await init_db()
         await redis_service.wait_ready()
         logger.info("Redis connected")

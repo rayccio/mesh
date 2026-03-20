@@ -42,45 +42,29 @@ async def migrate():
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS artifacts (
                 id VARCHAR PRIMARY KEY,
-                goal_id VARCHAR NOT NULL,
-                task_id VARCHAR NOT NULL,
-                file_path VARCHAR NOT NULL,
-                content TEXT,
-                version INT DEFAULT 1,
-                status VARCHAR DEFAULT 'draft',
-                created_at TIMESTAMPTZ DEFAULT NOW()
+                data JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
         print("Table 'artifacts' ensured.")
 
-        # Add agent_type column to tasks if not exists
+        # Add agent_type column to tasks if not exists (task data is JSONB, so no column needed)
+        # We already have tasks table, ensure it uses JSONB
+        # Check if tasks table exists and convert column type if needed
         await conn.execute("""
             DO $$
             BEGIN
-                IF NOT EXISTS (
+                IF EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name='tasks' AND column_name='agent_type'
+                    WHERE table_name='tasks' AND column_name='data' AND data_type='json'
                 ) THEN
-                    ALTER TABLE tasks ADD COLUMN agent_type VARCHAR;
+                    ALTER TABLE tasks ALTER COLUMN data TYPE jsonb USING data::jsonb;
                 END IF;
             END
             $$;
         """)
-        print("Checked/added agent_type column.")
-
-        await conn.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='tasks' AND column_name='retries'
-                ) THEN
-                    ALTER TABLE tasks ADD COLUMN retries INT DEFAULT 0;
-                END IF;
-            END
-            $$;
-        """)
-        print("Checked/added retries column.")
+        print("Checked/updated tasks table to jsonb.")
 
     finally:
         await conn.close()

@@ -60,6 +60,23 @@ async def migrate():
             )
         """)
         print("Table 'risk_policies' ensured.")
+
+        # Ensure existing tables have jsonb
+        for table in ['economy_accounts', 'transactions', 'strategies', 'risk_policies']:
+            await conn.execute(f"""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='{table}' AND column_name='data' AND data_type='json'
+                    ) THEN
+                        ALTER TABLE {table} ALTER COLUMN data TYPE jsonb USING data::jsonb;
+                    END IF;
+                END
+                $$;
+            """)
+        print("Checked/updated economy tables to jsonb.")
+
     finally:
         await conn.close()
 
