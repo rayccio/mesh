@@ -24,19 +24,18 @@ import { BridgeProvider } from './contexts/BridgeContext';
 import { orchestratorService } from './services/orchestratorService';
 import { wsService } from './services/websocketService';
 import { toast } from 'react-hot-toast';
+import { AlertModal } from './components/Modal'; // 👈 new import
 
-// Create a client for React Query
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 1000 * 60 * 5,
     },
   },
 });
 
-// Main App Content with Auth
 const AppContent: React.FC = () => {
   const { user, loading: authLoading, gatewayEnabled, logout, changePassword, refreshGatewayState } = useAuth();
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -50,7 +49,6 @@ const AppContent: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [creatingBotId, setCreatingBotId] = useState<string | null>(null);
   
-  // Active agents for the current hive
   const [activeAgents, setActiveAgents] = useState<Agent[]>([]);
   
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({
@@ -68,14 +66,14 @@ const AppContent: React.FC = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // ==================== GLOBAL CONFIG NAVIGATION STATE ====================
   const [globalConfigCategory, setGlobalConfigCategory] = useState<'system' | 'knowledge' | 'integrations'>('system');
   const [globalConfigSubTab, setGlobalConfigSubTab] = useState<string>('users');
-  // ========================================================================
 
   const { getPrimaryModel, refreshProviders } = useProviders();
 
-  // Ref for interval cleanup
+  // 👈 New state for no-primary modal
+  const [showNoPrimaryModal, setShowNoPrimaryModal] = useState(false);
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -112,7 +110,6 @@ const AppContent: React.FC = () => {
       try {
         setLoadError(null);
         
-        // Run independent requests in parallel
         const promises: Promise<any>[] = [
           orchestratorService.getGlobalSettings().catch(err => {
             console.warn('Could not fetch global settings, using defaults', err);
@@ -137,7 +134,6 @@ const AppContent: React.FC = () => {
 
         let hivesData = hivesResult as Hive[];
         
-        // If no hives, create a default one
         if (hivesData.length === 0) {
           try {
             const defaultHive = await orchestratorService.createHive({
@@ -164,7 +160,6 @@ const AppContent: React.FC = () => {
           setView('command');
         }
 
-        // Refresh providers in the background (non‑critical)
         refreshProviders().catch(err => 
           console.warn('Could not load providers', err)
         );
@@ -180,7 +175,6 @@ const AppContent: React.FC = () => {
     loadInitialData();
   }, [user, refreshProviders]);
 
-  // Fetch active agents when hive changes and set up periodic refresh
   const fetchActiveAgents = useCallback(async (hiveId: string) => {
     try {
       const agents = await orchestratorService.getHiveActiveAgents(hiveId);
@@ -264,7 +258,6 @@ const AppContent: React.FC = () => {
     (activeAgents.find(a => a.id === selectedAgentId) || hiveAgents.find(a => a.id === selectedAgentId)) || null
   , [activeAgents, hiveAgents, selectedAgentId]);
 
-  // Optimistic update function
   const updateHive = async (hiveId: string, updates: HiveUpdate) => {
     setHives(prev =>
       prev.map(h => (h.id === hiveId ? { ...h, ...updates } : h))
@@ -298,11 +291,12 @@ const AppContent: React.FC = () => {
     }
   };
 
+  // 👈 Modified handleCreateAgent
   const handleCreateAgent = async () => {
     if (!activeHiveId) return;
     const primaryModel = getPrimaryModel();
     if (!primaryModel) {
-      alert('No primary AI model configured. Please set up a provider and primary model in Environment first.');
+      setShowNoPrimaryModal(true);
       return;
     }
 
@@ -314,7 +308,7 @@ const AppContent: React.FC = () => {
     try {
       const agentCreate: AgentCreate = {
         name: 'New HiveBot',
-        role: 'Worker',
+        role: 'generic',
         soulMd: INITIAL_SOUL,
         identityMd: INITIAL_IDENTITY,
         toolsMd: INITIAL_TOOLS,
@@ -347,7 +341,7 @@ const AppContent: React.FC = () => {
       
     } catch (err) {
       console.error('Create failed', err);
-      alert('Failed to create bot. Check console for details.');
+      toast.error('Failed to create bot. Check console for details.');
       setSelectedAgentId(null);
       setView('cluster');
     } finally {
@@ -720,7 +714,6 @@ const AppContent: React.FC = () => {
                 }}
                 onLoadUsers={loadUsers}
                 onRefreshSettings={refreshGlobalSettings}
-                // ==================== NEW PROPS ====================
                 category={globalConfigCategory}
                 subTab={globalConfigSubTab}
                 onCategoryChange={setGlobalConfigCategory}
@@ -809,11 +802,19 @@ const AppContent: React.FC = () => {
           onSuccess={handlePasswordChangeSuccess}
         />
       )}
+
+      {/* 👈 New modal for missing primary AI */}
+      <AlertModal
+        isOpen={showNoPrimaryModal}
+        onClose={() => setShowNoPrimaryModal(false)}
+        title="Primary AI Not Configured"
+        message="A primary AI model is required to create an agent. Please go to Global Config > Integrations > Environment and set up a provider with a primary model."
+        confirmText="OK"
+      />
     </ErrorBoundary>
   );
 };
 
-// Main App with Providers
 const App: React.FC = () => {
   return (
     <BrowserRouter>
