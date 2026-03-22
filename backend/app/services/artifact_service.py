@@ -30,7 +30,7 @@ class ArtifactService:
                 """),
                 {"goal_id": goal_id, "task_id": task_id, "file_path": file_path}
             )
-            max_version = result.scalar()
+            max_version = await result.scalar()
             return (max_version or 0) + 1
 
     async def create_artifact(
@@ -79,7 +79,7 @@ class ArtifactService:
                 text("SELECT data FROM artifacts WHERE id = :id"),
                 {"id": artifact_id}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return HiveArtifact.model_validate(row[0])
         return None
@@ -93,7 +93,7 @@ class ArtifactService:
                 params["task_id"] = task_id
             query += " ORDER BY (data->>'created_at')::timestamptz DESC"
             result = await session.execute(text(query), params)
-            rows = result.fetchall()
+            rows = await result.fetchall()
             return [HiveArtifact.model_validate(r[0]) for r in rows]
 
     async def get_latest_artifact(self, goal_id: str, task_id: str, file_path: str) -> Optional[HiveArtifact]:
@@ -109,7 +109,7 @@ class ArtifactService:
                 """),
                 {"goal_id": goal_id, "task_id": task_id, "file_path": file_path}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return HiveArtifact.model_validate(row[0])
         return None

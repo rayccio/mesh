@@ -40,7 +40,7 @@ class EconomyEngine:
                 text("SELECT data FROM economy_accounts WHERE id = :id"),
                 {"id": account_id}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return EconomyAccount.model_validate_json(row[0])
         return None
@@ -51,7 +51,7 @@ class EconomyEngine:
                 text("SELECT data FROM economy_accounts WHERE data->>'owner_id' = :owner_id AND data->>'owner_type' = :owner_type"),
                 {"owner_id": owner_id, "owner_type": owner_type.value}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return EconomyAccount.model_validate_json(row[0])
         return None
@@ -65,7 +65,7 @@ class EconomyEngine:
                 )
             else:
                 result = await session.execute(text("SELECT data FROM economy_accounts"))
-            rows = result.fetchall()
+            rows = await result.fetchall()
             return [EconomyAccount.model_validate_json(r[0]) for r in rows]
 
     async def update_balance(self, account_id: str, delta: float) -> Optional[EconomyAccount]:
@@ -126,7 +126,7 @@ class EconomyEngine:
                 text("SELECT data FROM transactions WHERE id = :id"),
                 {"id": tx_id}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if not row:
                 return None
             tx = Transaction.model_validate_json(row[0])
@@ -151,7 +151,7 @@ class EconomyEngine:
                     text("SELECT data FROM transactions ORDER BY (data->>'created_at')::timestamptz DESC LIMIT :limit"),
                     {"limit": limit}
                 )
-            rows = result.fetchall()
+            rows = await result.fetchall()
             return [Transaction.model_validate_json(r[0]) for r in rows]
 
     async def transfer(self, from_account_id: str, to_account_id: str, amount: float, description: Optional[str] = None) -> Optional[Transaction]:

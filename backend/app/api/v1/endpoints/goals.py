@@ -109,7 +109,7 @@ async def get_goal_tasks(
         text("SELECT data FROM tasks WHERE data->>'goal_id' = :goal_id"),
         {"goal_id": goal_id}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     return [HiveTask.model_validate(r[0]) for r in rows]
 
 @router.post("/{goal_id}/cancel", response_model=HiveGoal)

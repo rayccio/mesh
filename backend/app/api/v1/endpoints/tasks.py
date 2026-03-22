@@ -5,7 +5,7 @@ from ....services.task_manager import TaskManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
 from ....services.redis_service import redis_service
-from ....models.types import HiveTask, HiveTaskStatus   # <-- changed
+from ....models.types import HiveTask, HiveTaskStatus
 from datetime import datetime
 import json
 

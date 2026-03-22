@@ -59,7 +59,7 @@ async def list_layers(
     result = await db.execute(
         text("SELECT id, name, description, version, author, dependencies, enabled, created_at, updated_at FROM layers ORDER BY created_at")
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     layers = []
     for r in rows:
         layers.append(LayerResponse(
@@ -85,10 +85,10 @@ async def list_layer_roles(
         text("SELECT layer_id, role_name, soul_md, identity_md, tools_md, role_type, priority FROM layer_roles WHERE layer_id = :layer_id ORDER BY priority DESC"),
         {"layer_id": layer_id}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
-        if not exists.fetchone():
+        if not (await exists.fetchone()):
             raise HTTPException(status_code=404, detail="Layer not found")
         return []
     roles = []
@@ -119,10 +119,10 @@ async def list_layer_skills(
         """),
         {"layer_id": layer_id}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
-        if not exists.fetchone():
+        if not (await exists.fetchone()):
             raise HTTPException(status_code=404, detail="Layer not found")
         return []
     skills = []

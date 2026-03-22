@@ -104,7 +104,7 @@ class LayerManager:
                     text("SELECT id FROM skills WHERE data->>'name' = :name"),
                     {"name": skill_name}
                 )
-                row = result.fetchone()
+                row = await result.fetchone()
                 if row:
                     skill_id = row[0]
                 else:
@@ -192,21 +192,21 @@ class LayerManager:
         """Enable a layer (set enabled=True). Also check dependencies."""
         async with AsyncSessionLocal() as session:
             # Check if layer exists
-            row = await session.execute(
+            result = await session.execute(
                 text("SELECT dependencies FROM layers WHERE id = :id"),
                 {"id": layer_id}
             )
-            result = row.fetchone()
-            if not result:
+            row = await result.fetchone()
+            if not row:
                 return False
-            deps = result[0] or []
+            deps = row[0] or []
             # Ensure all dependencies are installed and enabled
             for dep in deps:
                 dep_row = await session.execute(
                     text("SELECT enabled FROM layers WHERE name = :name"),
                     {"name": dep}
                 )
-                dep_enabled = dep_row.scalar()
+                dep_enabled = await dep_row.scalar()
                 if not dep_enabled:
                     raise Exception(f"Dependency layer {dep} is not enabled")
             # Enable the layer
@@ -233,11 +233,11 @@ class LayerManager:
         now = datetime.utcnow()
         async with AsyncSessionLocal() as session:
             # Check if config already exists for this (layer, hive)
-            row = await session.execute(
+            result = await session.execute(
                 text("SELECT id FROM layer_configs WHERE layer_id = :layer_id AND hive_id = :hive_id"),
                 {"layer_id": layer_id, "hive_id": hive_id}
             )
-            existing = row.fetchone()
+            existing = await result.fetchone()
             if existing:
                 # Update existing
                 await session.execute(
@@ -266,24 +266,24 @@ class LayerManager:
     async def get_layer_config(self, layer_id: str, hive_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve configuration for a layer in a hive."""
         async with AsyncSessionLocal() as session:
-            row = await session.execute(
+            result = await session.execute(
                 text("SELECT config_data FROM layer_configs WHERE layer_id = :layer_id AND hive_id = :hive_id"),
                 {"layer_id": layer_id, "hive_id": hive_id}
             )
-            result = row.fetchone()
-            if result:
-                return json.loads(result[0])
+            row = await result.fetchone()
+            if row:
+                return json.loads(row[0])
         return None
 
     async def get_layer_config_schema(self, layer_id: str) -> Optional[Dict[str, Any]]:
         """Return the config schema from the layer's settings.json."""
         # We need to know the layer's name to find its directory.
         async with AsyncSessionLocal() as session:
-            row = await session.execute(
+            result = await session.execute(
                 text("SELECT name FROM layers WHERE id = :id"),
                 {"id": layer_id}
             )
-            layer_name = row.scalar()
+            layer_name = await result.scalar()
             if not layer_name:
                 return None
         layer_dir = self.LAYERS_DIR / layer_name
@@ -300,4 +300,5 @@ class LayerManager:
                 text("SELECT id, name, class_path FROM loop_handlers WHERE layer_id = :layer_id"),
                 {"layer_id": layer_id}
             )
-            return [{"id": r[0], "name": r[1], "class_path": r[2]} for r in rows.fetchall()]
+            rows_list = await rows.fetchall()
+            return [{"id": r[0], "name": r[1], "class_path": r[2]} for r in rows_list]

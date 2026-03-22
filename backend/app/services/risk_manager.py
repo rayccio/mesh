@@ -16,7 +16,7 @@ class RiskManager:
                 text("SELECT data FROM risk_policies WHERE data->>'owner_id' = :owner_id AND data->>'owner_type' = :owner_type"),
                 {"owner_id": owner_id, "owner_type": owner_type.value}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return RiskPolicy.model_validate_json(row[0])
         return None
@@ -67,7 +67,7 @@ class RiskManager:
                 text("SELECT data FROM risk_policies WHERE id = :id"),
                 {"id": policy_id}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return RiskPolicy.model_validate_json(row[0])
         return None

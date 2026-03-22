@@ -43,7 +43,7 @@ class StrategyEngine:
                 text("SELECT data FROM strategies WHERE id = :id"),
                 {"id": strat_id}
             )
-            row = result.fetchone()
+            row = await result.fetchone()
             if row:
                 return Strategy.model_validate_json(row[0])
         return None
@@ -57,7 +57,7 @@ class StrategyEngine:
                 )
             else:
                 result = await session.execute(text("SELECT data FROM strategies"))
-            rows = result.fetchall()
+            rows = await result.fetchall()
             return [Strategy.model_validate_json(r[0]) for r in rows]
 
     async def update_strategy(self, strat_id: str, **updates) -> Optional[Strategy]:

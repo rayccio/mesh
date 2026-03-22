@@ -25,7 +25,7 @@ class SkillVersionRepository:
         result = await self.db.execute(
             select(SkillVersionModel).where(SkillVersionModel.id == version_id)
         )
-        db_version = result.scalar_one_or_none()
+        db_version = await result.scalar_one_or_none()
         if db_version:
             return SkillVersion(**db_version.data)
         return None
@@ -34,7 +34,7 @@ class SkillVersionRepository:
         result = await self.db.execute(
             select(SkillVersionModel).where(SkillVersionModel.skill_id == skill_id)
         )
-        db_versions = result.scalars().all()
+        db_versions = await result.scalars().all()
         return [SkillVersion(**v.data) for v in db_versions]
 
     async def update(self, version_id: str, updates: dict) -> SkillVersion | None:

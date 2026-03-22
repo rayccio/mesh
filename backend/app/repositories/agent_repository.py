@@ -15,7 +15,7 @@ class AgentRepository:
             id=agent.id,
             data=data,
             container_id=agent.container_id,
-            status=agent.status   # <-- FIXED: removed .value
+            status=agent.status
         )
         self.db.add(db_agent)
         await self.db.commit()
@@ -26,14 +26,14 @@ class AgentRepository:
         result = await self.db.execute(
             select(AgentModel).where(AgentModel.id == agent_id)
         )
-        db_agent = result.scalar_one_or_none()
+        db_agent = await result.scalar_one_or_none()
         if db_agent:
             return Agent(**db_agent.data)
         return None
 
     async def get_all(self) -> list[Agent]:
         result = await self.db.execute(select(AgentModel))
-        db_agents = result.scalars().all()
+        db_agents = await result.scalars().all()
         return [Agent(**a.data) for a in db_agents]
 
     async def update(self, agent_id: str, updates: dict) -> Agent | None:
@@ -47,7 +47,7 @@ class AgentRepository:
         await self.db.execute(
             update(AgentModel)
             .where(AgentModel.id == agent_id)
-            .values(data=data, status=agent.status)   # <-- FIXED: removed .value
+            .values(data=data, status=agent.status)
         )
         await self.db.commit()
         return agent

@@ -19,7 +19,7 @@ async def get_meta_status(db: AsyncSession = Depends(get_db)):
             ORDER BY created_at DESC LIMIT 1
         """)
     )
-    last_activity = result.scalar_one_or_none()
+    last_activity = await result.scalar()
     return {
         "status": "active",
         "last_run": last_activity.isoformat() if last_activity else None,
@@ -42,7 +42,7 @@ async def list_test_agents(
         """),
         {"limit": limit}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     agents = []
     for row in rows:
         agent_data = json.loads(row[1])
@@ -79,9 +79,9 @@ async def get_performance_stats(
             )
             AND (data->>'created_at')::timestamptz >= :since
         """),
-        {"since": since}  # Pass datetime object, not string
+        {"since": since}
     )
-    test_row = test_result.fetchone()
+    test_row = await test_result.fetchone()
     test_total = test_row[0] or 0
     test_completed = test_row[1] or 0
     test_success_rate = (test_completed / test_total) if test_total > 0 else 0
@@ -98,9 +98,9 @@ async def get_performance_stats(
             )
             AND (data->>'created_at')::timestamptz >= :since
         """),
-        {"since": since}  # Pass datetime object, not string
+        {"since": since}
     )
-    prod_row = prod_result.fetchone()
+    prod_row = await prod_result.fetchone()
     prod_total = prod_row[0] or 0
     prod_completed = prod_row[1] or 0
     prod_success_rate = (prod_completed / prod_total) if prod_total > 0 else 0
@@ -134,9 +134,10 @@ async def get_agent_metrics(
             AND (data->>'created_at')::timestamptz >= :since
             ORDER BY (data->>'created_at')::timestamptz DESC
         """),
-        {"agent_id": agent_id, "since": since}  # Pass datetime object, not string
+        {"agent_id": agent_id, "since": since}
     )
-    tasks = [json.loads(r[0]) for r in result.fetchall()]
+    rows = await result.fetchall()
+    tasks = [json.loads(r[0]) for r in rows]
     
     total = len(tasks)
     completed = sum(1 for t in tasks if t.get("status") == "completed")
@@ -185,7 +186,7 @@ async def list_ab_tests(
         """),
         {"limit": limit}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     tests = []
     for row in rows:
         agent_data = json.loads(row[1])
@@ -195,7 +196,7 @@ async def list_ab_tests(
             text("SELECT data FROM agents WHERE id = :id"),
             {"id": parent_id}
         )
-        parent_row = parent_result.fetchone()
+        parent_row = await parent_result.fetchone()
         parent_data = json.loads(parent_row[0]) if parent_row else {}
         
         tests.append({
@@ -225,7 +226,7 @@ async def get_meta_logs(
         """),
         {"limit": limit}
     )
-    rows = result.fetchall()
+    rows = await result.fetchall()
     logs = []
     for row in rows:
         agent_data = json.loads(row[1])
