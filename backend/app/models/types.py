@@ -489,3 +489,50 @@ class Project(BaseModel):
         populate_by_name=True,
         use_enum_values=True
     )
+
+# ========== New Layer Models ==========
+
+class Layer(BaseModel):
+    id: str
+    name: str
+    description: str
+    version: str
+    author: Optional[str] = None
+    dependencies: List[str] = []
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
+class LayerRole(BaseModel):
+    layer_id: str
+    role_name: str
+    soul_md: str
+    identity_md: str
+    tools_md: str
+    role_type: str
+    priority: int = 0
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
+class LayerSkill(BaseModel):
+    layer_id: str
+    skill_id: str
+    skill_name: str
+    skill_description: str
+    skill_type: str
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
