@@ -44,12 +44,8 @@ DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTG
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-try:
-    from tool_executor import ToolExecutor
-    tool_executor = ToolExecutor(simulator_url=SIMULATOR_URL)
-except Exception as e:
-    logger.exception("Failed to import ToolExecutor, worker will exit")
-    raise
+from skill_executor import SkillExecutor
+skill_executor = SkillExecutor(simulator_url=SIMULATOR_URL)
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -192,11 +188,33 @@ async def log_execution(goal_id: str, level: str, message: str, task_id: Optiona
     except Exception as e:
         logger.warning(f"Failed to send execution log: {e}")
 
+# ==================== JSON EXTRACTION HELPER ====================
+
+def extract_json(text: str) -> Optional[dict]:
+    """Extract JSON from text, handling markdown code blocks and malformed responses."""
+    # Try to find a JSON block in triple backticks
+    code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if code_block_match:
+        try:
+            return json.loads(code_block_match.group(1))
+        except:
+            pass
+
+    # Try to find any JSON object in the text
+    json_match = re.search(r'\{.*?\}', text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+
+    return None
+
 # ==================== LOOP IMPLEMENTATION ====================
 
 MAX_ITERATIONS = 5
 
-async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools):
+async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills):
     reasoning_config = agent_data.get("reasoning", {})
 
     async def call_with_role(role_prompt, user_prompt):
@@ -246,18 +264,17 @@ Generate the code for this task. Output only the code, no explanations."""
         tester_input = f"""Task: {description}
 Code to test:
 {code}
-Write and run tests for this code. Output the test results in JSON format with keys "passed" (bool) and "errors" (list of strings)."""
+Write and run tests for this code. Output the test results **in JSON format only** with keys "passed" (bool) and "errors" (list of strings). Do not include any other text.
+Example: {{"passed": true, "errors": []}}"""
         test_result_text = await call_with_role(tester_prompt, tester_input)
-        # Improved parsing: try to extract JSON if wrapped in markdown or extra text
-        try:
-            json_match = re.search(r'\{.*\}', test_result_text, re.DOTALL)
-            if json_match:
-                test_result = json.loads(json_match.group())
-            else:
-                test_result = {"passed": False, "errors": ["Failed to parse test output"]}
-        except Exception as e:
-            logger.error(f"Failed to parse test result: {e}\nRaw: {test_result_text}")
-            test_result = {"passed": False, "errors": [f"Parse error: {str(e)}"]}
+        logger.debug(f"Raw test result from AI: {test_result_text[:200]}")
+
+        # Parse test result
+        test_result = extract_json(test_result_text)
+        if test_result is None:
+            logger.error(f"Failed to parse test result: {test_result_text}")
+            test_result = {"passed": False, "errors": ["Failed to parse test output"]}
+
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
         if test_result.get("passed"):
@@ -307,8 +324,8 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         await update_agent_state(agent_id, agent_data)
         logger.info(f"Agent {agent_id} started think command")
 
-        tools_md = agent_data.get("tools_md", "")
-        allowed_tools = parse_allowed_tools(tools_md)
+        # Get allowed skills from agent's installed skills
+        allowed_skills = {s['skillId'] for s in agent_data.get('skills', []) if s.get('enabled', True)}
 
         response = await call_ai_delta(agent_id, user_input, model_config, retries=1)
         logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
@@ -316,14 +333,14 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         tool_calls = parse_tool_calls(response)
         observations = []
         for tc in tool_calls:
-            tool_name = tc['tool']
+            skill_name = tc['tool']
             params = tc['params']
             try:
-                result = await tool_executor.execute(tool_name, params, simulation, allowed_tools)
-                observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
+                result = await skill_executor.execute(skill_name, params, simulation, list(allowed_skills))
+                observations.append(f"Observation from {skill_name}: {json.dumps(result)}")
             except Exception as e:
-                observations.append(f"Observation from {tool_name}: error - {str(e)}")
-                logger.error(f"Tool {tool_name} execution failed: {e}")
+                observations.append(f"Observation from {skill_name}: error - {str(e)}")
+                logger.error(f"Skill {skill_name} execution failed: {e}")
 
         if observations:
             response += "\n" + "\n".join(observations)
@@ -404,8 +421,8 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             if "tokenCount" not in agent_data["memory"]:
                 agent_data["memory"]["tokenCount"] = 0
 
-        tools_md = agent_data.get("tools_md", "")
-        allowed_tools = parse_allowed_tools(tools_md)
+        # Get allowed skills from agent's installed skills
+        allowed_skills = {s['skillId'] for s in agent_data.get('skills', []) if s.get('enabled', True)}
 
         agent_data["status"] = "RUNNING"
         await update_agent_state(agent_id, agent_data)
@@ -414,7 +431,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
         asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
 
         success, iterations = await execute_task_with_loop(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills
         )
 
         agent_data["memory"]["shortTerm"].append(f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations.")
@@ -427,11 +444,21 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         await register_agent_idle(agent_id)
 
+        # Build a structured output dict
+        output_data = {
+            "success": success,
+            "iterations": iterations,
+            "task_id": task_id,
+            "goal_id": goal_id,
+            "final_artifact": f"task_{task_id}/final_code.py",
+            "message": f"Task completed with status: {'success' if success else 'failure'}"
+        }
+
         result = {
             "agent_id": agent_id,
             "task_id": task_id,
             "goal_id": goal_id,
-            "output": f"Task completed with status: {'success' if success else 'failure'}",
+            "output": output_data,
             "timestamp": datetime.utcnow().isoformat(),
             "simulation": simulation,
             "iterations": iterations,

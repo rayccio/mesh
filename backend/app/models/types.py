@@ -27,14 +27,7 @@ class UserRole(str, Enum):
     HIVE_ADMIN = "HIVE_ADMIN"
     HIVE_USER = "HIVE_USER"
 
-class AgentRole(str, Enum):
-    GENERIC = "generic"
-    BUILDER = "builder"
-    TESTER = "tester"
-    REVIEWER = "reviewer"
-    FIXER = "fixer"
-    ARCHITECT = "architect"
-    RESEARCHER = "researcher"
+# AgentRole enum removed – now a string
 
 class OrgRole(str, Enum):
     CEO = "ceo"
@@ -112,7 +105,7 @@ class MetaInfo(BaseModel):
 class Agent(BaseModel):
     id: str
     name: str
-    role: AgentRole
+    role: str  # changed from AgentRole to string
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -154,7 +147,7 @@ class Message(BaseModel):
 
 class AgentCreate(BaseModel):
     name: str
-    role: AgentRole = AgentRole.GENERIC
+    role: str  # changed from AgentRole to string
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -174,7 +167,7 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[AgentRole] = None
+    role: Optional[str] = None  # changed from AgentRole to string
     soul_md: Optional[str] = Field(None, alias="soulMd")
     identity_md: Optional[str] = Field(None, alias="identityMd")
     tools_md: Optional[str] = Field(None, alias="toolsMd")
@@ -353,6 +346,10 @@ class HiveTask(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     retries: int = 0
+    # New fields for Phase 0
+    loop_handler: Optional[str] = None
+    project_id: Optional[str] = None
+    sandbox_level: str = "task"
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -369,6 +366,9 @@ class HiveArtifact(BaseModel):
     version: int = 1
     status: str = "draft"
     created_at: datetime
+    # New fields for Phase 0
+    parent_artifact_id: Optional[str] = None
+    layer_id: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -471,3 +471,21 @@ class RiskPolicy(BaseModel):
     kill_switch_triggered: bool = False
     created_at: datetime
     updated_at: datetime
+
+# New Project model for Phase 0
+class Project(BaseModel):
+    id: str
+    hive_id: str
+    name: str
+    description: str = ""
+    goal: str
+    root_goal_id: Optional[str] = None
+    state: str = "active"
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )

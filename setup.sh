@@ -390,17 +390,22 @@ docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo
 docker exec hivebot_backend python /app/scripts/create_execution_logs_table.py || echo -e "${RED}❌ Execution logs migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
-# NEW: Migrate hives to add agentIds field
+# NEW: Phase 0 migration scripts
+echo -e "${YELLOW}🔄 Running Phase 0 migrations...${NC}"
+docker exec hivebot_backend python /app/scripts/create_layer_tables.py || echo -e "${RED}❌ Layer tables creation failed, but continuing...${NC}"
+docker exec hivebot_backend python /app/scripts/seed_core_layer.py || echo -e "${RED}❌ Core layer seeding failed, but continuing...${NC}"
+docker exec hivebot_backend python /app/scripts/update_tasks_artifacts.py || echo -e "${RED}❌ Task/artifact update failed, but continuing...${NC}"
+
+# Existing migrations
 echo -e "${YELLOW}🔄 Migrating hives to include agentIds...${NC}"
 docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py || echo -e "${RED}❌ Hive migration failed, but continuing...${NC}"
-# NEW: Convert JSON columns to JSONB
 echo -e "${YELLOW}🔄 Converting JSON columns to JSONB...${NC}"
 docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo -e "${RED}❌ JSONB conversion failed, but continuing...${NC}"
 
 # --- 13. Final status ---
 clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 10 is now running!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 0 complete!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"

@@ -1,9 +1,9 @@
-# backend/app/services/agent_manager.py
+i# backend/app/services/agent_manager.py
 import json
 import os
 from typing import Dict, Optional, List, Set
 from datetime import datetime
-from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo, ReasoningConfig, ReportingTarget, AgentRole, OrgRole
+from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo, ReasoningConfig, ReportingTarget, OrgRole, AgentMemory
 from ..core.config import settings
 from .docker_service import DockerService
 from .redis_service import redis_service
@@ -25,6 +25,7 @@ from .task_manager import TaskManager
 import uuid
 import shutil
 import logging
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -33,21 +34,53 @@ class AgentManager:
         self.docker = docker_service
         self.cache: Dict[str, Agent] = {}
 
-    def _get_prompts_for_role(self, role: AgentRole) -> tuple[str, str, str]:
-        if role == AgentRole.BUILDER:
+    async def _get_role_prompts_from_db(self, role_name: str) -> tuple[str, str, str]:
+        """Fetch soul, identity, tools from layer_roles table."""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("""
+                    SELECT soul_md, identity_md, tools_md
+                    FROM layer_roles
+                    WHERE role_name = :role_name
+                """),
+                {"role_name": role_name}
+            )
+            row = result.fetchone()
+            if row:
+                return row[0], row[1], row[2]
+        return None, None, None
+
+    def _get_prompts_for_role(self, role: str) -> tuple[str, str, str]:
+        # First try to get from database (async, but we need to handle async)
+        # For now, we'll keep the constants fallback; actual async call will be made in create_agent.
+        # We'll move the async logic to create_role_agent.
+        # So this method is deprecated; we'll remove it and use async version in create_role_agent.
+        # We'll just keep it for backward compatibility but mark as deprecated.
+        # We'll add a new async method.
+        # To avoid major refactor, we'll leave this as sync and update create_role_agent to call async version.
+        # For now, we'll just return constants as fallback.
+        if role == "builder":
             return BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS
-        elif role == AgentRole.TESTER:
+        elif role == "tester":
             return TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS
-        elif role == AgentRole.REVIEWER:
+        elif role == "reviewer":
             return REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS
-        elif role == AgentRole.FIXER:
+        elif role == "fixer":
             return FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS
-        elif role == AgentRole.ARCHITECT:
+        elif role == "architect":
             return ARCHITECT_SOUL, ARCHITECT_IDENTITY, ARCHITECT_TOOLS
-        elif role == AgentRole.RESEARCHER:
+        elif role == "researcher":
             return RESEARCHER_SOUL, RESEARCHER_IDENTITY, RESEARCHER_TOOLS
         else:
             return INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
+
+    async def _get_prompts_for_role_async(self, role: str) -> tuple[str, str, str]:
+        # Try database first
+        soul, identity, tools = await self._get_role_prompts_from_db(role)
+        if soul:
+            return soul, identity, tools
+        # Fallback to constants
+        return self._get_prompts_for_role(role)
 
     async def _get_repo(self):
         session = AsyncSessionLocal()
@@ -56,7 +89,7 @@ class AgentManager:
     async def create_role_agent(
         self,
         name: str,
-        role: AgentRole,
+        role: str,
         reasoning: ReasoningConfig,
         reporting_target: ReportingTarget = ReportingTarget.PARENT,
         parent_id: Optional[str] = None,
@@ -65,7 +98,7 @@ class AgentManager:
         org_role: OrgRole = OrgRole.MEMBER,
         department: Optional[str] = None
     ) -> Agent:
-        soul, identity, tools = self._get_prompts_for_role(role)
+        soul, identity, tools = await self._get_prompts_for_role_async(role)
         agent_in = AgentCreate(
             name=name,
             role=role,
@@ -115,14 +148,14 @@ class AgentManager:
             reporting_target=agent_in.reporting_target,
             parent_id=agent_in.parent_id,
             sub_agent_ids=[],
-            memory={"short_term": [], "summary": "", "token_count": 0},
+            memory=AgentMemory(),
             last_active=datetime.utcnow(),
             container_id=container_id,
             user_uid=user_uid,
             local_files=[],
             channels=agent_in.channels or [],
             skills=[],
-            meta={},
+            meta=MetaInfo(),
             org_role=agent_in.org_role,
             department=agent_in.department
         )
@@ -249,6 +282,16 @@ class AgentManager:
                     agent.meta = MetaInfo(**current_meta)
                 else:
                     agent.meta = value
+            elif field == "reasoning" and value is not None:
+                if isinstance(value, dict):
+                    agent.reasoning = ReasoningConfig(**value)
+                else:
+                    agent.reasoning = value
+            elif field == "memory" and value is not None:
+                if isinstance(value, dict):
+                    agent.memory = AgentMemory(**value)
+                else:
+                    agent.memory = value
             elif field != "skills":
                 setattr(agent, field, value)
 
@@ -381,11 +424,7 @@ class AgentManager:
     async def spawn_agent_for_task(self, hive_id: str, required_skill_ids: List[str], agent_type: str) -> Optional[Agent]:
         skill_manager = SkillManager()
 
-        try:
-            role = AgentRole(agent_type)
-        except ValueError:
-            role = AgentRole.GENERIC
-
+        # agent_type is already a string, no need to convert to enum
         reasoning = ReasoningConfig(
             model="openai/gpt-4o",
             temperature=0.7,
@@ -395,8 +434,8 @@ class AgentManager:
         )
 
         agent = await self.create_role_agent(
-            name=f"{role.value.capitalize()} Bee",
-            role=role,
+            name=f"{agent_type.capitalize()} Bee",
+            role=agent_type,
             reasoning=reasoning,
             reporting_target=ReportingTarget.PARENT,
             parent_id=None,
@@ -419,7 +458,7 @@ class AgentManager:
         hive_manager = HiveManager(self)
         await hive_manager.add_agent(hive_id, agent)
 
-        logger.info(f"Spawned agent {agent.id} (role {role.value}) for hive {hive_id} with skills {required_skill_ids}")
+        logger.info(f"Spawned agent {agent.id} (role {agent_type}) for hive {hive_id} with skills {required_skill_ids}")
         return agent
 
     async def store_long_term_memory(self, agent_id: str, text: str, timestamp: Optional[datetime] = None) -> bool:
