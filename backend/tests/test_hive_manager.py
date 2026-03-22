@@ -1,6 +1,5 @@
-# backend/tests/test_hive_manager.py
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch, AsyncMock, PropertyMock
 from app.services.hive_manager import HiveManager
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
@@ -12,8 +11,9 @@ import tempfile
 async def test_create_hive_persists_agent_ids(session):
     # Create a temporary directory for agent data to avoid cluttering real data
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Patch settings.AGENTS_DIR to point to a temporary directory
-        with patch.object(settings, 'AGENTS_DIR', tmpdir):
+        # Patch the class property AGENTS_DIR on the Settings class
+        with patch('app.core.config.Settings.AGENTS_DIR', new_callable=PropertyMock) as mock_agents_dir:
+            mock_agents_dir.return_value = tmpdir
             # Mock DockerService to prevent container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
@@ -41,7 +41,8 @@ async def test_create_hive_persists_agent_ids(session):
 @pytest.mark.asyncio
 async def test_add_agent_updates_agent_ids(session):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch.object(settings, 'AGENTS_DIR', tmpdir):
+        with patch('app.core.config.Settings.AGENTS_DIR', new_callable=PropertyMock) as mock_agents_dir:
+            mock_agents_dir.return_value = tmpdir
             # Mock DockerService to avoid container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
