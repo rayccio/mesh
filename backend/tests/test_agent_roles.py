@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
-from app.models.types import AgentRole, ReasoningConfig, ReportingTarget, AgentCreate
+from app.models.types import ReasoningConfig, ReportingTarget, AgentCreate
 from app.constants import (
     BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
     TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS
@@ -13,18 +13,18 @@ from app.services.skill_manager import SkillManager  # not used directly but nee
 async def test_get_prompts_for_role():
     docker = MagicMock(spec=DockerService)
     manager = AgentManager(docker)
-    soul, identity, tools = manager._get_prompts_for_role(AgentRole.BUILDER)
+    soul, identity, tools = manager._get_prompts_for_role("builder")
     assert soul == BUILDER_SOUL
     assert identity == BUILDER_IDENTITY
     assert tools == BUILDER_TOOLS
 
-    soul, identity, tools = manager._get_prompts_for_role(AgentRole.TESTER)
+    soul, identity, tools = manager._get_prompts_for_role("tester")
     assert soul == TESTER_SOUL
     assert identity == TESTER_IDENTITY
     assert tools == TESTER_TOOLS
 
     # Fallback
-    soul, identity, tools = manager._get_prompts_for_role(AgentRole.GENERIC)
+    soul, identity, tools = manager._get_prompts_for_role("generic")
     from app.constants import INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
     assert soul == INITIAL_SOUL
     assert identity == INITIAL_IDENTITY
@@ -53,12 +53,12 @@ async def test_create_role_agent(session):
 
         agent = await manager.create_role_agent(
             name="Builder Bot",
-            role=AgentRole.BUILDER,
+            role="builder",
             reasoning=reasoning
         )
 
         assert agent.name == "Builder Bot"
-        assert agent.role == AgentRole.BUILDER
+        assert agent.role == "builder"
         assert agent.soul_md == BUILDER_SOUL
         assert agent.identity_md == BUILDER_IDENTITY
         assert agent.tools_md == BUILDER_TOOLS
@@ -93,5 +93,5 @@ async def test_spawn_agent_for_task():
         assert agent == mock_agent
         mock_create.assert_awaited_once()
         args, kwargs = mock_create.call_args
-        assert kwargs['role'] == AgentRole.BUILDER
+        assert kwargs['role'] == "builder"
         mock_hive_manager.add_agent.assert_awaited_once_with("h-test", mock_agent)

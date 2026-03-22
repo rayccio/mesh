@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from app.services.hive_manager import HiveManager
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
-from app.models.types import HiveCreate, AgentCreate, ReasoningConfig, ReportingTarget, AgentRole
+from app.models.types import HiveCreate, AgentCreate, ReasoningConfig, ReportingTarget
 from app.core.config import settings
 import tempfile
 
@@ -62,7 +62,7 @@ async def test_add_agent_updates_agent_ids(session):
             reasoning = ReasoningConfig(model="openai/gpt-4o", temperature=0.7)
             agent_in = AgentCreate(
                 name="Test Agent",
-                role=AgentRole.GENERIC,
+                role="generic",  # changed from AgentRole.GENERIC
                 soulMd="soul",
                 identityMd="identity",
                 toolsMd="tools",

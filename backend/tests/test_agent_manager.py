@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
-from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget, AgentRole
+from app.models.types import AgentCreate, ReasoningConfig, ReportingTarget
 from app.services.redis_service import redis_service
 
 @pytest.mark.asyncio
@@ -16,7 +16,7 @@ async def test_create_agent(session):
 
         agent_in = AgentCreate(
             name="Test Agent",
-            role=AgentRole.GENERIC,
+            role="generic",  # changed from AgentRole.GENERIC
             soulMd="test soul",
             identityMd="test identity",
             toolsMd="test tools",

@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.main import app as fastapi_app
-from app.models.types import Agent, AgentStatus, ReasoningConfig, ReportingTarget, AgentRole, OrgRole
+from app.models.types import Agent, AgentStatus, ReasoningConfig, ReportingTarget, OrgRole
 from datetime import datetime
 
 # Import the dependency functions to override
@@ -17,7 +17,7 @@ def sample_agents():
         Agent(
             id="ceo1",
             name="CEO",
-            role=AgentRole.GENERIC,
+            role="generic",  # changed from AgentRole.GENERIC
             soul_md="",
             identity_md="",
             tools_md="",
@@ -25,7 +25,7 @@ def sample_agents():
             reasoning=reasoning,
             reporting_target=ReportingTarget.PARENT,
             sub_agent_ids=["strat1", "strat2"],
-            memory={"short_term": [], "summary": "", "token_count": 0},
+            memory={"shortTerm": [], "summary": "", "tokenCount": 0},
             last_active=now,
             container_id="",
             user_uid="10001",
@@ -38,7 +38,7 @@ def sample_agents():
         Agent(
             id="strat1",
             name="Strategy1",
-            role=AgentRole.GENERIC,
+            role="generic",
             soul_md="",
             identity_md="",
             tools_md="",
@@ -47,7 +47,7 @@ def sample_agents():
             reporting_target=ReportingTarget.PARENT,
             parent_id="ceo1",
             sub_agent_ids=["dept1"],
-            memory={"short_term": [], "summary": "", "token_count": 0},
+            memory={"shortTerm": [], "summary": "", "tokenCount": 0},
             last_active=now,
             container_id="",
             user_uid="10001",
@@ -60,7 +60,7 @@ def sample_agents():
         Agent(
             id="strat2",  # <-- added missing agent
             name="Strategy2",
-            role=AgentRole.GENERIC,
+            role="generic",
             soul_md="",
             identity_md="",
             tools_md="",
@@ -69,7 +69,7 @@ def sample_agents():
             reporting_target=ReportingTarget.PARENT,
             parent_id="ceo1",
             sub_agent_ids=[],
-            memory={"short_term": [], "summary": "", "token_count": 0},
+            memory={"shortTerm": [], "summary": "", "tokenCount": 0},
             last_active=now,
             container_id="",
             user_uid="10001",
@@ -82,7 +82,7 @@ def sample_agents():
         Agent(
             id="dept1",
             name="DeptHead",
-            role=AgentRole.GENERIC,
+            role="generic",
             soul_md="",
             identity_md="",
             tools_md="",
@@ -91,7 +91,7 @@ def sample_agents():
             reporting_target=ReportingTarget.PARENT,
             parent_id="strat1",
             sub_agent_ids=[],
-            memory={"short_term": [], "summary": "", "token_count": 0},
+            memory={"shortTerm": [], "summary": "", "tokenCount": 0},
             last_active=now,
             container_id="",
             user_uid="10001",

@@ -1,7 +1,7 @@
 # backend/tests/test_hive_model.py
 import pytest
 from datetime import datetime
-from app.models.types import Hive, Agent, AgentStatus, ReasoningConfig, ReportingTarget, AgentRole
+from app.models.types import Hive, Agent, AgentStatus, ReasoningConfig, ReportingTarget
 import json
 
 def test_hive_model_serialization():

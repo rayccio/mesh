@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import numpy as np
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
-from app.models.types import Agent, AgentStatus, ReasoningConfig, ReportingTarget, AgentRole
+from app.models.types import Agent, AgentStatus, ReasoningConfig, ReportingTarget
 from datetime import datetime
 
 @pytest.mark.asyncio

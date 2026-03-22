@@ -1,4 +1,4 @@
-import pytest
+iimport pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 import json
@@ -41,7 +41,7 @@ async def test_execute_task_with_loop_success_first_try():
     goal_id = "g-test"
     hive_id = "h-test"
     agent_data = {"reasoning": {"model": "openai/gpt-4o"}, "tools_md": "- run_code"}
-    allowed_tools = ["run_code"]
+    allowed_skills = {"run_code"}  # changed to set
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
@@ -52,7 +52,7 @@ async def test_execute_task_with_loop_success_first_try():
         ]
 
         success, iterations = await execute_task_with_loop(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills
         )
 
         assert success is True
@@ -69,7 +69,7 @@ async def test_execute_task_with_loop_failure_then_fix():
     goal_id = "g-test"
     hive_id = "h-test"
     agent_data = {"reasoning": {"model": "openai/gpt-4o"}, "tools_md": "- run_code"}
-    allowed_tools = ["run_code"]
+    allowed_skills = {"run_code"}  # changed to set
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
@@ -85,7 +85,7 @@ async def test_execute_task_with_loop_failure_then_fix():
             ]
 
             success, iterations = await execute_task_with_loop(
-                agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
+                agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills
             )
 
             assert success is True
@@ -124,8 +124,9 @@ async def test_process_task_assign_integration():
 
         await process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False)
 
+        # The allowed_skills should be a set
         mock_loop.assert_awaited_once_with(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, ["run_code"]
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, {"run_code"}  # changed to set
         )
         assert mock_update.await_count >= 2
         mock_register.assert_awaited_once_with(agent_id)
