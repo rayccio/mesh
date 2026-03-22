@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock, PropertyMock
 from app.services.hive_manager import HiveManager
 from app.services.agent_manager import AgentManager
@@ -13,7 +14,7 @@ async def test_create_hive_persists_agent_ids(session):
     with tempfile.TemporaryDirectory() as tmpdir:
         # Patch the class property AGENTS_DIR on the Settings class
         with patch('app.core.config.Settings.AGENTS_DIR', new_callable=PropertyMock) as mock_agents_dir:
-            mock_agents_dir.return_value = tmpdir
+            mock_agents_dir.return_value = Path(tmpdir)  # Return a Path object
             # Mock DockerService to prevent container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
@@ -42,7 +43,7 @@ async def test_create_hive_persists_agent_ids(session):
 async def test_add_agent_updates_agent_ids(session):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch('app.core.config.Settings.AGENTS_DIR', new_callable=PropertyMock) as mock_agents_dir:
-            mock_agents_dir.return_value = tmpdir
+            mock_agents_dir.return_value = Path(tmpdir)  # Return a Path object
             # Mock DockerService to avoid container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
