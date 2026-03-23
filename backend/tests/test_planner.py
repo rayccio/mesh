@@ -38,7 +38,6 @@ async def test_plan_success():
 
         mock_gen.return_value = mock_response
 
-        # Create a mock connection that can be reused for all execute calls
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
@@ -53,28 +52,15 @@ async def test_plan_success():
         templates_result = MagicMock()
         templates_result.fetchall.return_value = []  # No templates
 
-        # Define a side_effect function that returns appropriate results based on the SQL
-        async def execute_side_effect(sql, params=None):
-            # We can inspect the SQL string, but for simplicity, we'll return
-            # the results in order for the first three calls, and for any later
-            # INSERT/UPDATE calls we just return a dummy result.
-            # Since we don't know the exact order, we'll use a counter.
-            # But using a counter inside an async function can be tricky.
-            # Instead, we'll use a call counter and store it in a mutable list.
-            # We'll implement a simple stateful side effect.
+        # Use a mutable list to persist across calls
+        results_queue = [roles_result, skills_result, templates_result]
 
-            # We'll use a closure with a list to count calls.
-            # This is the simplest way to avoid StopAsyncIteration.
-            # We'll create a list that holds the three results we prepared.
-            results_queue = [roles_result, skills_result, templates_result]
-            # If we have already returned all three, then for any further calls
-            # just return a dummy MagicMock that can be awaited.
+        async def execute_side_effect(sql, params=None):
+            # This function is called once per execute; we pop from the persistent queue
             if results_queue:
                 current = results_queue.pop(0)
                 return current
             else:
-                # This is an INSERT/UPDATE – just return a dummy object
-                # that has a .fetchall() method that returns an empty list.
                 dummy = MagicMock()
                 dummy.fetchall.return_value = []
                 return dummy
@@ -130,9 +116,9 @@ async def test_plan_fallback_on_failure():
         templates_result = MagicMock()
         templates_result.fetchall.return_value = []  # No templates
 
-        # Same side_effect function to handle multiple calls
+        results_queue = [roles_result, skills_result, templates_result]
+
         async def execute_side_effect(sql, params=None):
-            results_queue = [roles_result, skills_result, templates_result]
             if results_queue:
                 current = results_queue.pop(0)
                 return current

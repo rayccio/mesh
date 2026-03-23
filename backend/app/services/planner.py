@@ -29,7 +29,8 @@ class Planner:
                 text("SELECT role_name FROM layer_roles WHERE layer_id = ANY(:ids)"),
                 {"ids": layer_ids}
             )
-            return [row[0] for row in result.fetchall()]
+            rows = result.fetchall()
+            return [row[0] for row in rows]
 
     async def _get_layer_skills(self, layer_ids: List[str]):
         if not layer_ids:
