@@ -31,7 +31,10 @@ async def test_plan_success():
 
     with patch('app.services.planner.settings.secrets.get', return_value=mock_secrets), \
          patch('app.services.planner.generate_with_messages', new_callable=AsyncMock) as mock_gen, \
-         patch('app.services.planner.AsyncSessionLocal') as mock_session:
+         patch('app.services.planner.AsyncSessionLocal') as mock_session, \
+         patch.object(planner, '_get_enabled_layers', new_callable=AsyncMock) as mock_get_layers:
+
+        mock_get_layers.return_value = [('core', 'HiveBot Core', None)]
 
         mock_gen.return_value = mock_response
         mock_conn = AsyncMock()
@@ -41,7 +44,7 @@ async def test_plan_success():
 
         tasks = await planner.plan(
             goal_id="g-test",
-            hive_id="h-test",                      # <-- ADDED
+            hive_id="h-test",
             goal_text="Build a todo app",
             hive_context="context",
             skills=[]
@@ -53,7 +56,7 @@ async def test_plan_success():
         assert tasks[0].description == "Write code"
         assert tasks[0].agent_type == "builder"
         assert tasks[0].status == HiveTaskStatus.PENDING
-        assert mock_conn.execute.call_count >= 2  # at least inserts and updates
+        assert mock_conn.execute.call_count >= 2
         mock_conn.commit.assert_awaited_once()
 
 @pytest.mark.asyncio
@@ -70,7 +73,10 @@ async def test_plan_fallback_on_failure():
     }
     with patch('app.services.planner.settings.secrets.get', return_value=mock_secrets), \
          patch('app.services.planner.generate_with_messages', new_callable=AsyncMock, side_effect=Exception("API error")), \
-         patch('app.services.planner.AsyncSessionLocal') as mock_session:
+         patch('app.services.planner.AsyncSessionLocal') as mock_session, \
+         patch.object(planner, '_get_enabled_layers', new_callable=AsyncMock) as mock_get_layers:
+
+        mock_get_layers.return_value = [('core', 'HiveBot Core', None)]
 
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
@@ -79,7 +85,7 @@ async def test_plan_fallback_on_failure():
 
         tasks = await planner.plan(
             goal_id="g-test",
-            hive_id="h-test",                      # <-- ADDED
+            hive_id="h-test",
             goal_text="Build a todo app"
         )
         assert len(tasks) == 1
