@@ -1,10 +1,11 @@
+# backend/tests/test_goals_api.py
 import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.main import app as fastapi_app
 from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus, Hive, HiveMindConfig
 from app.models.db_models import HiveModel
-from app.utils.json_encoder import prepare_json_data  # <-- ADDED
+from app.utils.json_encoder import prepare_json_data
 from datetime import datetime
 import json
 
@@ -25,28 +26,15 @@ async def test_create_goal_api(client: AsyncClient, session):
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
-    # Insert directly using SQLAlchemy model, with JSON serialization
     async with AsyncSessionLocal() as db_session:
-        # Convert datetime objects to ISO strings before inserting
         serialized_data = prepare_json_data(hive_data.model_dump(by_alias=True))
         db_hive = HiveModel(id=hive_data.id, data=serialized_data)
         db_session.add(db_hive)
         await db_session.commit()
     # ---------------------------------------------------
 
-    # Mock dependencies
-    mock_goal_engine = AsyncMock()
-    mock_goal = HiveGoal(
-        id="g-test",
-        hive_id=hive_id,
-        description="Test goal",
-        constraints={},
-        success_criteria=[],
-        status=HiveGoalStatus.CREATED,
-        created_at=datetime.utcnow()
-    )
-    mock_goal_engine.create_goal.return_value = mock_goal
-
+    # Mock dependencies – we DO NOT mock the goal engine,
+    # we want the real goal engine to insert the goal.
     mock_planner = AsyncMock()
     mock_task = HiveTask(
         id="t-test",
@@ -66,9 +54,8 @@ async def test_create_goal_api(client: AsyncClient, session):
     mock_hive.global_user_md = "context"
     mock_hive_manager.get_hive.return_value = mock_hive
 
-    # Apply dependency overrides
-    from app.api.v1.endpoints.goals import get_goal_engine, get_planner, get_hive_manager
-    fastapi_app.dependency_overrides[get_goal_engine] = lambda: mock_goal_engine
+    # Override only the planner and hive_manager, leave goal_engine real
+    from app.api.v1.endpoints.goals import get_planner, get_hive_manager
     fastapi_app.dependency_overrides[get_planner] = lambda: mock_planner
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
 
@@ -86,7 +73,7 @@ async def test_create_goal_api(client: AsyncClient, session):
         response = await client.post(f"/api/v1/hives/{hive_id}/goals", json=payload)
         assert response.status_code == 200
         data = response.json()
-        assert data["goal"]["id"] == "g-test"
+        assert data["goal"]["id"].startswith("g-")
         assert len(data["tasks"]) == 1
         assert data["tasks"][0]["id"] == "t-test"
 
