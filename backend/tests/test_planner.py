@@ -49,9 +49,11 @@ async def test_plan_success():
             ("sk-1", "web_search", "Search the web"),
             ("sk-2", "run_code", "Execute code in a container")
         ]
-        # The planner calls execute twice: once for roles, once for skills.
-        # We need to return the appropriate mock for each call.
-        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result]
+        # Mock for templates query (five columns: goal_pattern, template, custom_planner_class, priority, layer_id)
+        mock_templates_result = MagicMock()
+        mock_templates_result.fetchall.return_value = []  # No templates
+        # The planner now calls execute three times: for roles, skills, and templates.
+        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result, mock_templates_result]
 
         mock_conn.commit = AsyncMock()
 
@@ -102,7 +104,10 @@ async def test_plan_fallback_on_failure():
             ("sk-1", "web_search", "Search the web"),
             ("sk-2", "run_code", "Execute code in a container")
         ]
-        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result]
+        # Mock for templates query (five columns)
+        mock_templates_result = MagicMock()
+        mock_templates_result.fetchall.return_value = []
+        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result, mock_templates_result]
 
         mock_conn.commit = AsyncMock()
 

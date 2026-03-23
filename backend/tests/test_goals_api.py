@@ -3,7 +3,8 @@ from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.main import app as fastapi_app
 from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus, Hive, HiveMindConfig
-from app.models.db_models import HiveModel  # <-- ADDED
+from app.models.db_models import HiveModel
+from app.utils.json_encoder import prepare_json_data  # <-- ADDED
 from datetime import datetime
 import json
 
@@ -24,9 +25,11 @@ async def test_create_goal_api(client: AsyncClient, session):
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
-    # Insert directly using SQLAlchemy model
+    # Insert directly using SQLAlchemy model, with JSON serialization
     async with AsyncSessionLocal() as db_session:
-        db_hive = HiveModel(id=hive_data.id, data=hive_data.model_dump(by_alias=True))
+        # Convert datetime objects to ISO strings before inserting
+        serialized_data = prepare_json_data(hive_data.model_dump(by_alias=True))
+        db_hive = HiveModel(id=hive_data.id, data=serialized_data)
         db_session.add(db_hive)
         await db_session.commit()
     # ---------------------------------------------------
