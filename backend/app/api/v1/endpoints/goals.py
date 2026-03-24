@@ -21,6 +21,7 @@ class GoalCreateRequest(BaseModel):
     description: str
     constraints: dict = {}
     success_criteria: List[str] = []
+    project_id: Optional[str] = None  # new
 
 class GoalResponse(BaseModel):
     goal: HiveGoal
@@ -53,21 +54,38 @@ async def create_goal(
     if not hive:
         raise HTTPException(status_code=404, detail="Hive not found")
 
-    goal = await goal_engine.create_goal(
-        hive_id=hive_id,
-        description=request.description,
-        constraints=request.constraints,
-        success_criteria=request.success_criteria
-    )
-
-    # Create a project for this goal
-    project = await project_manager.create_project(
-        hive_id=hive_id,
-        name=f"Project for goal {goal.id}",
-        description=goal.description,
-        goal=goal.description,
-        root_goal_id=goal.id
-    )
+    # Determine project
+    project_id = request.project_id
+    if project_id:
+        project = await project_manager.get_project(project_id)
+        if not project or project.hive_id != hive_id:
+            raise HTTPException(status_code=400, detail="Invalid project_id")
+    else:
+        # Create a new project
+        goal = await goal_engine.create_goal(
+            hive_id=hive_id,
+            description=request.description,
+            constraints=request.constraints,
+            success_criteria=request.success_criteria
+        )
+        project = await project_manager.create_project(
+            hive_id=hive_id,
+            name=f"Project for goal {goal.id}",
+            description=goal.description,
+            goal=goal.description,
+            root_goal_id=goal.id
+        )
+        project_id = project.id
+        goal_id = goal.id
+    # If project was already existing, we still need a goal
+    if 'goal' not in locals():
+        goal = await goal_engine.create_goal(
+            hive_id=hive_id,
+            description=request.description,
+            constraints=request.constraints,
+            success_criteria=request.success_criteria
+        )
+        goal_id = goal.id
 
     from ....services.skill_manager import SkillManager
     skill_manager = SkillManager()
@@ -81,7 +99,8 @@ async def create_goal(
             goal_text=request.description,
             hive_context=hive.global_user_md,
             skills=skills_list,
-            project_id=project.id   # <-- pass project_id
+            project_id=project_id,
+            layer_id="core"  # Default to core layer for now
         )
     except Exception as e:
         logger.error(f"Planning failed for goal {goal.id}: {e}")

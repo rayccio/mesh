@@ -26,7 +26,9 @@ class BaseLoopHandler(ABC):
         project_id: Optional[str],
         skill_executor,
         call_ai_delta,
-        save_artifact
+        save_artifact,
+        update_artifact_status,
+        layer_id: Optional[str] = "core"
     ) -> Dict[str, Any]:
         """
         Execute the task with a domain‑specific loop.
@@ -52,7 +54,9 @@ class DefaultLoopHandler(BaseLoopHandler):
         project_id: Optional[str],
         skill_executor,
         call_ai_delta,
-        save_artifact
+        save_artifact,
+        update_artifact_status,
+        layer_id: Optional[str] = "core"
     ) -> Dict[str, Any]:
         from worker.constants import (
             BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
@@ -81,9 +85,6 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
         reviewer_prompt = make_system_prompt(REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS)
         fixer_prompt = make_system_prompt(FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS)
 
-        # We'll need to access the agent's reasoning config; we can get it from the DB, but for now we'll assume it's in call_ai_delta's config.
-        # Since call_ai_delta will use the agent's own reasoning config, we just need to pass the appropriate system prompt.
-        # We'll use a helper to call with a specific role prompt.
         async def call_with_role(role_prompt, user_prompt):
             return await call_ai_delta(
                 agent_id,
@@ -109,6 +110,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
             return None
 
         current_code = None
+        final_artifact_id = None
         for iteration in range(1, self.MAX_ITERATIONS + 1):
             logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
 
@@ -118,7 +120,9 @@ Previous code (if any): {current_code or 'None'}
 Generate the code for this task. Output only the code, no explanations."""
             code = await call_with_role(builder_prompt, builder_input)
             file_path = f"task_{task_id}/iteration_{iteration}/code.py"
-            await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
+            code_artifact = await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft", layer_id=layer_id)
+            if code_artifact and code_artifact.get('id'):
+                await update_artifact_status(hive_id, goal_id, code_artifact['id'], "built")
             current_code = code
 
             tester_input = f"""Task: {description}
@@ -134,16 +138,20 @@ Example: {{"passed": true, "errors": []}}"""
                 logger.error(f"Failed to parse test result: {test_result_text}")
                 test_result = {"passed": False, "errors": ["Failed to parse test output"]}
 
-            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
+            test_artifact = await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested", layer_id=layer_id)
+            if code_artifact and code_artifact.get('id'):
+                await update_artifact_status(hive_id, goal_id, code_artifact['id'], "tested")
 
             if test_result.get("passed"):
                 logger.info(f"Task {task_id} passed on iteration {iteration}")
-                await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
+                final_artifact = await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final", layer_id=layer_id)
+                if final_artifact and final_artifact.get('id'):
+                    await update_artifact_status(hive_id, goal_id, final_artifact['id'], "final")
                 return {
                     "success": True,
                     "iterations": iteration,
                     "output": {
-                        "final_artifact": f"task_{task_id}/final_code.py",
+                        "final_artifact": final_artifact.get('id') if final_artifact else None,
                         "message": "Task completed successfully"
                     }
                 }
@@ -157,7 +165,7 @@ Test errors:
 {json.dumps(test_result.get('errors', []), indent=2)}
 List the issues in the code that caused the test failures. Provide a list of actionable fixes."""
             issues = await call_with_role(reviewer_prompt, reviewer_input)
-            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
+            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed", layer_id=layer_id)
 
             fixer_input = f"""Task: {description}
 Code:
@@ -167,7 +175,10 @@ Issues:
 Provide the fixed code. Output only the corrected code, no explanations."""
             fixed_code = await call_with_role(fixer_prompt, fixer_input)
             current_code = fixed_code
-            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
+            fixed_artifact = await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed", layer_id=layer_id)
+            if code_artifact and code_artifact.get('id'):
+                # The fixed code is a new artifact; we could link it as a child, but not required.
+                pass
 
         logger.warning(f"Task {task_id} failed after {self.MAX_ITERATIONS} iterations")
         return {

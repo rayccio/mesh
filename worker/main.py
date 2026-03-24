@@ -151,11 +151,19 @@ def parse_allowed_tools(tools_md: str) -> list:
                 allowed.append(tool)
     return allowed
 
-async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="draft"):
+async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="draft", layer_id=None, parent_artifact_id=None):
     url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"
     async with httpx.AsyncClient() as client:
         files = {'file': (file_path, content)}
-        data = {'task_id': task_id, 'file_path': file_path, 'status': status}
+        data = {
+            'task_id': task_id,
+            'file_path': file_path,
+            'status': status
+        }
+        if layer_id:
+            data['layer_id'] = layer_id
+        if parent_artifact_id:
+            data['parent_artifact_id'] = parent_artifact_id
         resp = await client.post(url, data=data, files=files, headers={"Authorization": f"Bearer {INTERNAL_API_KEY}"})
         resp.raise_for_status()
         return resp.json()
@@ -168,6 +176,16 @@ async def read_artifact(hive_id, goal_id, task_id, file_path):
             return None
         resp.raise_for_status()
         return resp.content
+
+async def update_artifact_status(hive_id: str, goal_id: str, artifact_id: str, status: str):
+    url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts/{artifact_id}/status"
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            url,
+            data={"status": status},
+            headers={"Authorization": f"Bearer {INTERNAL_API_KEY}"}
+        )
+        resp.raise_for_status()
 
 # ==================== EXECUTION LOGGING ====================
 
@@ -323,7 +341,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
 
-        # Fetch full task data from DB to get loop_handler, project_id, and sandbox_level
+        # Fetch full task data from DB to get loop_handler, project_id, sandbox_level, and layer_id
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text("SELECT data FROM tasks WHERE id = :id"),
@@ -339,6 +357,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             loop_handler_name = task_data.get("loop_handler", "default")
             project_id = task_data.get("project_id")
             sandbox_level = task_data.get("sandbox_level", "task")
+            layer_id = task_data.get("layer_id", "core")
 
         # Store sandbox level and current task in Redis for this agent
         redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
@@ -366,7 +385,9 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             project_id=project_id,
             skill_executor=skill_executor,
             call_ai_delta=call_ai_delta,
-            save_artifact=save_artifact
+            save_artifact=save_artifact,
+            update_artifact_status=update_artifact_status,
+            layer_id=layer_id
         )
 
         success = loop_result.get("success", False)

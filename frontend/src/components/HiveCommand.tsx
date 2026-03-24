@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Hive, Agent, ExecutionLog, ExecutionLogLevel } from '../types';
+import { Hive, Agent, ExecutionLog, ExecutionLogLevel, Project } from '../types';
 import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -21,8 +21,18 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showNoPrimaryModal, setShowNoPrimaryModal] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   const { getPrimaryModel } = useProviders();
+
+  // Fetch projects for this hive
+  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects', hive.id],
+    queryFn: () => orchestratorService.listProjects(hive.id),
+    refetchInterval: 10000,
+  });
 
   // Fetch recent goals for this hive
   const { data: goals = [], isLoading: goalsLoading } = useQuery({
@@ -35,8 +45,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     return goals.find(g => g.status === 'planning' || g.status === 'executing');
   }, [goals]);
 
-  // If there's an active goal, set its id for task polling
-  useState(() => {
+  useEffect(() => {
     if (activeGoal) {
       setCurrentGoalId(activeGoal.id);
     } else {
@@ -81,8 +90,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
       return `[${timestamp}] ${level} ${task} ${iter} ${log.message}`;
     }).join('\n');
 
-    console.log('Copying logs:', logText); // debug
-
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(logText).then(() => {
         toast.success('Logs copied to clipboard');
@@ -118,14 +125,36 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     }
     setExecuting(true);
     try {
+      let projectId = selectedProjectId;
+      if (projectId === 'new') {
+        // Create a new project first
+        if (!newProjectName.trim()) {
+          toast.error('Please enter a project name');
+          setExecuting(false);
+          return;
+        }
+        const newProject = await orchestratorService.createProject(hive.id, {
+          name: newProjectName,
+          description: goalInput,
+          goal: goalInput,
+        });
+        projectId = newProject.id;
+      } else if (!projectId && projects.length > 0) {
+        // If no project selected and there are existing projects, use the first one
+        projectId = projects[0].id;
+      }
       const result = await orchestratorService.createGoal(hive.id, {
         description: goalInput,
         constraints: {},
         success_criteria: [],
+        project_id: projectId || undefined,
       });
       setCurrentGoalId(result.goal.id);
       toast.success('Goal created – tasks are being assigned.');
       setGoalInput('');
+      setNewProjectName('');
+      setSelectedProjectId('');
+      setShowNewProjectModal(false);
     } catch (err) {
       console.error('Failed to create goal', err);
       toast.error('Failed to create goal. Check console.');
@@ -240,7 +269,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
         </div>
       </div>
 
-      {/* Goal Input Card */}
+      {/* Goal Input Card with Project Selection */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500 mb-4">Issue New Order</h3>
         <div className="flex flex-col md:flex-row gap-4">
@@ -250,25 +279,84 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
             placeholder="Describe your objective... e.g., 'Build a REST API for a todo app with JWT auth'"
             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none resize-none h-24"
           />
-          <button
-            onClick={handleExecute}
-            disabled={executing || !goalInput.trim()}
-            className="px-8 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-2xl flex items-center gap-3 self-end"
-          >
-            {executing ? (
-              <>
-                <LoadingSpinner size="sm" />
-                <span>Executing...</span>
-              </>
-            ) : (
-              <>
-                <Icons.Terminal />
-                <span>Execute</span>
-              </>
-            )}
-          </button>
+          <div className="flex flex-col gap-2">
+            <select
+              value={selectedProjectId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedProjectId(val);
+                if (val === 'new') setShowNewProjectModal(true);
+              }}
+              className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              disabled={executing}
+            >
+              <option value="">Select a project (optional)</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+              <option value="new">+ Create new project</option>
+            </select>
+            <button
+              onClick={handleExecute}
+              disabled={executing || !goalInput.trim()}
+              className="px-8 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-2xl flex items-center gap-3"
+            >
+              {executing ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span>Executing...</span>
+                </>
+              ) : (
+                <>
+                  <Icons.Terminal />
+                  <span>Execute</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* New Project Modal */}
+      {showNewProjectModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md space-y-6 shadow-2xl">
+            <h3 className="text-xl font-black uppercase tracking-tighter">Create New Project</h3>
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Project Name</label>
+              <input
+                type="text"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                placeholder="e.g., Website Redesign"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowNewProjectModal(false)}
+                className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-black uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (newProjectName.trim()) {
+                    setSelectedProjectId('new');
+                    setShowNewProjectModal(false);
+                  } else {
+                    toast.error('Please enter a project name');
+                  }
+                }}
+                className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-widest"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Active Goal Section */}
       {activeGoal && (

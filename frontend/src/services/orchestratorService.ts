@@ -1,4 +1,4 @@
-import { Agent, AgentCreate, AgentUpdate, FileEntry, Hive, HiveCreate, HiveUpdate, GlobalSettings, Message, UserAccount, Skill, SkillVersion, AgentSkill, ExecutionLog } from '../types';
+import { Agent, AgentCreate, AgentUpdate, FileEntry, Hive, HiveCreate, HiveUpdate, GlobalSettings, Message, UserAccount, Skill, SkillVersion, AgentSkill, ExecutionLog, Project } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_PATH = '/api/v1';
@@ -30,11 +30,11 @@ class OrchestratorService {
 
   // ==================== AUTH ENDPOINTS ====================
 
-  async login(username: string, password: string): Promise<{ 
-    access_token: string; 
-    user_id: string; 
-    username: string; 
-    role: string; 
+  async login(username: string, password: string): Promise<{
+    access_token: string;
+    user_id: string;
+    username: string;
+    role: string;
     password_changed: boolean;
     gateway_enabled: boolean;
   }> {
@@ -78,11 +78,11 @@ class OrchestratorService {
     }
   }
 
-  async getNoAuthToken(): Promise<{ 
-    access_token: string; 
-    user_id: string; 
-    username: string; 
-    role: string; 
+  async getNoAuthToken(): Promise<{
+    access_token: string;
+    user_id: string;
+    username: string;
+    role: string;
     password_changed: boolean;
     gateway_enabled: boolean;
   }> {
@@ -610,7 +610,7 @@ class OrchestratorService {
     return res.json();
   }
 
-  async createGoal(hiveId: string, goal: { description: string; constraints?: any; success_criteria?: string[] }): Promise<any> {
+  async createGoal(hiveId: string, goal: { description: string; constraints?: any; success_criteria?: string[]; project_id?: string }): Promise<any> {
     const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals`, {
       method: 'POST',
       headers: this._authHeaders(),
@@ -897,6 +897,43 @@ class OrchestratorService {
       headers: this._authHeaders(),
     });
     if (!res.ok) throw new Error('Failed to list loop handlers');
+    return res.json();
+  }
+
+  // ==================== PROJECT ENDPOINTS ====================
+  async listProjects(hiveId: string): Promise<Project[]> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/projects`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list projects');
+    return res.json();
+  }
+
+  async createProject(hiveId: string, project: { name: string; description: string; goal: string; rootGoalId?: string }): Promise<Project> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/projects`, {
+      method: 'POST',
+      headers: this._authHeaders(),
+      body: JSON.stringify(project),
+    });
+    if (!res.ok) throw new Error('Failed to create project');
+    return res.json();
+  }
+
+  async getProject(projectId: string, hiveId: string): Promise<Project> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/projects/${projectId}`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to get project');
+    return res.json();
+  }
+
+  async updateProject(projectId: string, hiveId: string, updates: { state?: string }): Promise<Project> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: this._authHeaders(),
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error('Failed to update project');
     return res.json();
   }
 

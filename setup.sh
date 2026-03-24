@@ -113,7 +113,7 @@ mkdir -p ./data
 mkdir -p ./data/artifacts
 mkdir -p ./secrets
 mkdir -p ./global_files
-mkdir -p ./layers        # Phase 2: layer storage directory
+mkdir -p ./layers
 
 # --- 4. Validate and repair master key (hex only, length 64) ---
 validate_master_key() {
@@ -414,6 +414,10 @@ docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py |
 echo -e "${YELLOW}🔄 Converting JSON columns to JSONB...${NC}"
 docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo -e "${RED}❌ JSONB conversion failed, but continuing...${NC}"
 
+# Phase 5 migration: add layer_id to tasks
+echo -e "${YELLOW}🔄 Adding layerId to tasks...${NC}"
+docker exec hivebot_backend python /app/scripts/add_layer_id_to_tasks.py || echo -e "${RED}❌ Adding layerId to tasks failed, but continuing...${NC}"
+
 # --- 14. Install CLI wrapper (Phase 2) ---
 echo -e "${YELLOW}🛠️ Installing HiveBot CLI...${NC}"
 if [ -f ./hivebot ]; then
@@ -427,7 +431,7 @@ fi
 # --- 15. Final status ---
 clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 4 complete!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 5 complete!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"

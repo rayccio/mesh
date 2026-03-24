@@ -8,6 +8,7 @@ from ..core.database import AsyncSessionLocal
 from ..core.config import settings
 from ..models.types import HiveArtifact
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,27 @@ class ArtifactService:
         self.base_path = settings.DATA_DIR / "artifacts"
         self.base_path.mkdir(parents=True, exist_ok=True)
 
+    async def _get_lifecycle(self, layer_id: str) -> dict:
+        """Fetch the lifecycle JSON for a layer. Return default if not found."""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT lifecycle FROM layers WHERE id = :id"),
+                {"id": layer_id}
+            )
+            row = result.fetchone()
+            if row and row[0]:
+                return row[0]
+            # Default lifecycle
+            return {
+                "states": ["draft", "built", "tested", "final"],
+                "transitions": {
+                    "draft": ["built"],
+                    "built": ["tested"],
+                    "tested": ["final"],
+                }
+            }
+
     async def _get_next_version(self, goal_id: str, task_id: str, file_path: str) -> int:
-        """Get the next version number for a given file path within a goal/task."""
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text("""
@@ -39,11 +59,15 @@ class ArtifactService:
         task_id: str,
         file_path: str,
         content: bytes,
-        status: str = "draft"
+        status: str = "draft",
+        layer_id: Optional[str] = None,
+        parent_artifact_id: Optional[str] = None
     ) -> HiveArtifact:
-        """Create a new artifact (new version)."""
         if ".." in file_path or file_path.startswith("/"):
             raise ValueError("Invalid file path")
+
+        if not layer_id:
+            layer_id = "core"
 
         version = await self._get_next_version(goal_id, task_id, file_path)
         artifact_id = f"art-{uuid.uuid4().hex[:8]}"
@@ -52,6 +76,20 @@ class ArtifactService:
         async with aiofiles.open(artifact_file, "wb") as f:
             await f.write(content)
 
+        # If no parent provided, try to get the latest version of the same file
+        if not parent_artifact_id:
+            latest = await self.get_latest_artifact(goal_id, task_id, file_path)
+            if latest:
+                parent_artifact_id = latest.id
+
+        # Determine initial status from lifecycle's first state
+        lifecycle = await self._get_lifecycle(layer_id)
+        states = lifecycle.get("states", [])
+        if not states:
+            initial_status = "draft"
+        else:
+            initial_status = states[0]
+
         artifact = HiveArtifact(
             id=artifact_id,
             goal_id=goal_id,
@@ -59,8 +97,10 @@ class ArtifactService:
             file_path=file_path,
             content="",
             version=version,
-            status=status,
-            created_at=datetime.utcnow()
+            status=initial_status,
+            created_at=datetime.utcnow(),
+            parent_artifact_id=parent_artifact_id,
+            layer_id=layer_id
         )
 
         async with AsyncSessionLocal() as session:
@@ -114,11 +154,20 @@ class ArtifactService:
                 return HiveArtifact.model_validate(row[0])
         return None
 
-    async def update_artifact_status(self, artifact_id: str, status: str) -> Optional[HiveArtifact]:
+    async def update_artifact_status(self, artifact_id: str, new_status: str) -> Optional[HiveArtifact]:
         artifact = await self.get_artifact(artifact_id)
         if not artifact:
             return None
-        artifact.status = status
+
+        lifecycle = await self._get_lifecycle(artifact.layer_id)
+        current_status = artifact.status
+        transitions = lifecycle.get("transitions", {})
+
+        allowed_next = transitions.get(current_status, [])
+        if new_status not in allowed_next:
+            raise ValueError(f"Invalid transition from {current_status} to {new_status}. Allowed: {allowed_next}")
+
+        artifact.status = new_status
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text("UPDATE artifacts SET data = :data WHERE id = :id"),

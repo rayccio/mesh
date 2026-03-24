@@ -283,3 +283,16 @@ export interface ExecutionLog {
   createdAt: string;
 }
 // ============================================================
+
+// ==================== PROJECT TYPE ====================
+export interface Project {
+  id: string;
+  hiveId: string;
+  name: string;
+  description: string;
+  goal: string;
+  rootGoalId?: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+}

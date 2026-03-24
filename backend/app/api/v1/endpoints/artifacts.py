@@ -12,7 +12,6 @@ import tempfile
 
 logger = logging.getLogger(__name__)
 
-# Router with prefix that includes the hive_id and goal_id path parameters
 router = APIRouter(prefix="/hives/{hive_id}/goals/{goal_id}/artifacts", tags=["artifacts"])
 
 async def get_artifact_service():
@@ -45,6 +44,8 @@ async def create_artifact(
     file_path: str = Form(...),
     file: UploadFile = File(...),
     status: str = Form("draft"),
+    layer_id: Optional[str] = Form(None),
+    parent_artifact_id: Optional[str] = Form(None),
     artifact_service: ArtifactService = Depends(get_artifact_service),
     hive_manager: HiveManager = Depends(get_hive_manager)
 ):
@@ -58,7 +59,9 @@ async def create_artifact(
             task_id=task_id,
             file_path=file_path,
             content=content,
-            status=status
+            status=status,
+            layer_id=layer_id,
+            parent_artifact_id=parent_artifact_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

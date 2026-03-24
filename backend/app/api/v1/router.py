@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts, organization, economy, layers   
+from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts, organization, economy, layers, projects  # added projects
 from .endpoints import logs
 from .endpoints import internal_logs
 
@@ -26,4 +26,5 @@ api_router.include_router(artifacts.router)
 api_router.include_router(organization.router)
 api_router.include_router(economy.router)
 api_router.include_router(logs.router)
-api_router.include_router(layers.router)   
+api_router.include_router(layers.router)
+api_router.include_router(projects.router)  # <-- new

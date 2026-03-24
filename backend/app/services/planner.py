@@ -50,7 +50,6 @@ class Planner:
 
     async def _get_matching_templates(self, goal_text: str):
         async with AsyncSessionLocal() as session:
-            # Get all templates from enabled layers
             result = await session.execute(
                 text("""
                     SELECT pt.goal_pattern, pt.template, pt.custom_planner_class, pt.priority, l.id as layer_id
@@ -79,7 +78,8 @@ class Planner:
         goal_text: str,
         hive_context: Optional[str] = None,
         skills: Optional[List[Dict]] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
+        layer_id: Optional[str] = "core"
     ) -> List[HiveTask]:
         """
         Decompose goal into tasks and dependencies, store them in DB, and return the list.
@@ -142,6 +142,7 @@ class Planner:
                         task.goal_id = goal_id
                         task.hive_id = hive_id
                         task.project_id = project_id
+                        task.layer_id = layer_id  # set layer_id
                         await session.execute(
                             text("INSERT INTO tasks (id, data) VALUES (:id, :data)"),
                             {"id": task.id, "data": task.model_dump_json()}
@@ -267,7 +268,8 @@ Do not include any other text outside the JSON.
                     depends_on=[],  # will fill after all created
                     required_skills=t.get("required_skills", []),
                     created_at=datetime.utcnow(),
-                    project_id=project_id  # set project_id
+                    project_id=project_id,
+                    layer_id=layer_id  # <-- new
                 )
                 tasks.append(task)
                 await session.execute(
