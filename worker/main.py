@@ -48,6 +48,7 @@ from skill_executor import SkillExecutor
 skill_executor = SkillExecutor(simulator_url=SIMULATOR_URL)
 
 from loop_handler import registry as loop_handler_registry, BaseLoopHandler
+from container_manager import container_manager
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -206,6 +207,13 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         # Get allowed skills from agent's installed skills
         allowed_skills = {s['skillId'] for s in agent_data.get('skills', []) if s.get('enabled', True)}
 
+        # Retrieve sandbox level from Redis (set by task assign)
+        redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+        sandbox_level = await redis_client.get(f"agent:{agent_id}:sandbox") or "skill"
+        task_id = await redis_client.get(f"agent:{agent_id}:current_task") or None
+        project_id = await redis_client.get(f"agent:{agent_id}:current_project") or None
+        await redis_client.close()
+
         response = await call_ai_delta(agent_id, user_input, model_config, retries=1)
         logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
 
@@ -215,7 +223,13 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
             skill_name = tc['tool']
             params = tc['params']
             try:
-                result = await skill_executor.execute(skill_name, params, simulation, list(allowed_skills))
+                result = await skill_executor.execute(
+                    skill_name, params, simulation, list(allowed_skills),
+                    sandbox_level=sandbox_level,
+                    task_id=task_id,
+                    project_id=project_id,
+                    agent_id=agent_id
+                )
                 observations.append(f"Observation from {skill_name}: {json.dumps(result)}")
             except Exception as e:
                 observations.append(f"Observation from {skill_name}: error - {str(e)}")
@@ -309,7 +323,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
 
-        # Fetch full task data from DB to get loop_handler and project_id
+        # Fetch full task data from DB to get loop_handler, project_id, and sandbox_level
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text("SELECT data FROM tasks WHERE id = :id"),
@@ -324,6 +338,14 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
                 task_data = json.loads(task_data)
             loop_handler_name = task_data.get("loop_handler", "default")
             project_id = task_data.get("project_id")
+            sandbox_level = task_data.get("sandbox_level", "task")
+
+        # Store sandbox level and current task in Redis for this agent
+        redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+        await redis_client.set(f"agent:{agent_id}:sandbox", sandbox_level)
+        await redis_client.set(f"agent:{agent_id}:current_task", task_id)
+        await redis_client.set(f"agent:{agent_id}:current_project", project_id or "")
+        await redis_client.close()
 
         # Get loop handler class
         handler_class = loop_handler_registry.get(loop_handler_name)
@@ -359,6 +381,20 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
         await update_agent_state(agent_id, agent_data)
 
         await register_agent_idle(agent_id)
+
+        # Clean up Redis keys and containers
+        redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+        await redis_client.delete(f"agent:{agent_id}:sandbox")
+        await redis_client.delete(f"agent:{agent_id}:current_task")
+        await redis_client.delete(f"agent:{agent_id}:current_project")
+        await redis_client.close()
+
+        # Clean up container if it was task-level
+        if sandbox_level == "task":
+            await container_manager.cleanup_task(task_id)
+        elif sandbox_level == "project" and project_id:
+            # Optionally keep project container alive; we'll not clean it here.
+            pass
 
         # Build a structured output dict
         output_data = {

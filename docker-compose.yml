@@ -7,6 +7,14 @@ services:
     container_name: hivebot_agent_builder
     profiles: ["tools"]
 
+  skill-runner-builder:
+    build:
+      context: .
+      dockerfile: docker/skill-runner/Dockerfile
+    image: hivebot/skill-runner:latest
+    container_name: hivebot_skill_runner_builder
+    profiles: ["tools"]
+
   redis:
     image: redis:7-alpine
     container_name: hivebot_redis

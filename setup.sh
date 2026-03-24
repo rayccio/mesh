@@ -189,7 +189,14 @@ $COMPOSE_CMD build agent-builder || {
     exit 1
 }
 
-# --- 8. Secrets vault initialisation (crash‑proof) ---
+# --- 8. Pre‑build skill-runner image ---
+echo -e "${YELLOW}🐳 Pre‑building skill-runner image...${NC}"
+$COMPOSE_CMD build skill-runner-builder || {
+    echo -e "${RED}❌ Failed to build skill-runner image.${NC}"
+    exit 1
+}
+
+# --- 9. Secrets vault initialisation (crash‑proof) ---
 echo -e "${YELLOW}🔐 Initializing secure secrets vault...${NC}"
 echo -e "${YELLOW}   You will be prompted for the public URL (if any). Press Enter to skip.${NC}"
 
@@ -280,7 +287,7 @@ print('✅ Secrets encrypted and saved.')
 INNER_EOF
 "
 
-# --- 8b. Extract INTERNAL_API_KEY from secrets and add to .env (for worker) ---
+# --- 9b. Extract INTERNAL_API_KEY from secrets and add to .env (for worker) ---
 echo -e "${YELLOW}🔑 Extracting INTERNAL_API_KEY for worker...${NC}"
 INTERNAL_KEY=$(docker run --rm -v "$(pwd)/secrets:/secrets" python:3.11-slim bash -c "
 pip install cryptography > /dev/null 2>&1
@@ -316,7 +323,7 @@ else
     echo -e "${RED}   ❌ Failed to extract INTERNAL_API_KEY${NC}"
 fi
 
-# --- 8c. Create bridges.env file for bridge workers ---
+# --- 9c. Create bridges.env file for bridge workers ---
 echo -e "${YELLOW}🔧 Creating bridges.env for bridge workers...${NC}"
 
 docker run --rm -v "$(pwd)/secrets:/secrets" python:3.11-slim bash -c "
@@ -355,7 +362,7 @@ EXTRACT_EOF
 
 chmod 600 ./bridges.env
 
-# --- 9. Build base image first, then the rest (with no-cache to ensure freshness) ---
+# --- 10. Build base image first, then the rest (with no-cache to ensure freshness) ---
 echo -e "${YELLOW}🐳 Building base image (no-cache)...${NC}"
 $COMPOSE_CMD build --no-cache bridge-base
 
@@ -369,11 +376,11 @@ $COMPOSE_CMD build --no-cache bridge-telegram
 echo -e "${YELLOW}🐳 Building remaining Docker images (with no-cache)...${NC}"
 $COMPOSE_CMD build --no-cache
 
-# --- 10. Start services ---
+# --- 11. Start services ---
 echo -e "${YELLOW}🐳 Starting Docker services...${NC}"
 $COMPOSE_CMD up -d
 
-# --- 11. Wait for backend to be healthy ---
+# --- 12. Wait for backend to be healthy ---
 echo -e "${YELLOW}⏳ Waiting for backend to become healthy...${NC}"
 for i in {1..30}; do
     if docker inspect --format='{{json .State.Health.Status}}' hivebot_backend 2>/dev/null | grep -q '"healthy"'; then
@@ -384,7 +391,7 @@ for i in {1..30}; do
     sleep 2
 done
 
-# --- 12. Run database migrations (including new tables) ---
+# --- 13. Run database migrations (including new tables) ---
 echo -e "${YELLOW}📦 Running database migrations...${NC}"
 docker exec hivebot_backend python /app/scripts/create_goal_tables.py || echo -e "${RED}❌ Goal migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo -e "${RED}❌ Economy migration failed, but continuing...${NC}"
@@ -407,7 +414,7 @@ docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py |
 echo -e "${YELLOW}🔄 Converting JSON columns to JSONB...${NC}"
 docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo -e "${RED}❌ JSONB conversion failed, but continuing...${NC}"
 
-# --- 13. Install CLI wrapper (Phase 2) ---
+# --- 14. Install CLI wrapper (Phase 2) ---
 echo -e "${YELLOW}🛠️ Installing HiveBot CLI...${NC}"
 if [ -f ./hivebot ]; then
     cp ./hivebot /usr/local/bin/hivebot
@@ -417,10 +424,10 @@ else
     echo -e "${YELLOW}   ⚠️  hivebot wrapper not found, skipping install${NC}"
 fi
 
-# --- 14. Final status ---
+# --- 15. Final status ---
 clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 3 complete!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 4 complete!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"

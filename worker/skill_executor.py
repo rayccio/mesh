@@ -2,29 +2,37 @@ import os
 import asyncio
 import logging
 import httpx
-from typing import Dict, Any, Optional, List
 import json
+from typing import Dict, Any, Optional, List
+
+from .container_manager import container_manager
+from .skill_manager import SkillManager  # we'll need to import this; but it's in backend, not worker.
+# Since we can't import from backend directly in worker, we'll make an HTTP call to fetch skill version.
+# We'll use the orchestrator API to get the skill version.
+# Alternatively, we can have a local skill manager that queries the DB. But the worker already has DB access.
+# So we'll use the DB directly.
+
+from sqlalchemy import text
+from ..backend.core.database import AsyncSessionLocal  # we need to import from backend; careful with paths.
+# But in the worker, the path is different. We'll need to adjust. For now, we'll assume we can import from backend.
+# However, to keep things simple, we'll use the existing `skill_manager.py` from backend, but that's not in the worker's PYTHONPATH.
+# A better approach: create a simple function in worker to fetch skill version by ID using the DB session.
+
+# We'll add a helper function to fetch skill version from DB.
+
+async def fetch_skill_version(version_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch skill version data from the database."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            text("SELECT data FROM skill_versions WHERE id = :id"),
+            {"id": version_id}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
 
 logger = logging.getLogger(__name__)
-
-# Optional imports – gracefully handled
-try:
-    import asyncssh
-except ImportError:
-    asyncssh = None
-    logger.warning("asyncssh not installed, SSH tool will be unavailable")
-
-try:
-    from playwright.async_api import async_playwright
-except ImportError:
-    async_playwright = None
-    logger.warning("playwright not installed, browser tool will be unavailable")
-
-try:
-    import docker
-except ImportError:
-    docker = None
-    logger.warning("docker not installed, code execution tool will be unavailable")
 
 
 class SkillExecutor:
@@ -42,9 +50,15 @@ class SkillExecutor:
         skill_name: str,
         params: Dict[str, Any],
         simulation: bool = False,
-        allowed_skills: Optional[List[str]] = None
+        allowed_skills: Optional[List[str]] = None,
+        sandbox_level: str = "skill",
+        task_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Execute a skill, checking permissions first."""
+        """
+        Execute a skill, checking permissions first.
+        """
         # Permission check
         if allowed_skills is not None and skill_name not in allowed_skills:
             logger.warning(f"Skill '{skill_name}' not allowed for this agent")
@@ -53,23 +67,65 @@ class SkillExecutor:
         if simulation:
             return await self._call_simulator(skill_name, params)
 
-        # Real execution
-        skill_map = {
-            "web_search": self._web_search,
-            "ssh_execute": self._ssh_execute,
-            "browser_action": self._browser_action,
-            "run_code": self._run_code,
-            "api_call": self._api_call,
-        }
-        func = skill_map.get(skill_name)
-        if not func:
-            logger.warning(f"Unknown skill '{skill_name}', falling back to simulator")
-            return await self._call_simulator(skill_name, params)
+        # Fetch the skill by name (we need to get the active version).
+        # We'll use the SkillManager from backend? For now, we'll make a DB query.
+        # We need to map skill name to skill ID, then get the active version.
+        # We'll do a simple DB query.
 
+        async with AsyncSessionLocal() as session:
+            # Get skill ID by name
+            skill_row = await session.execute(
+                text("SELECT id FROM skills WHERE data->>'name' = :name"),
+                {"name": skill_name}
+            )
+            skill_id = skill_row.scalar()
+            if not skill_id:
+                logger.warning(f"Skill '{skill_name}' not found in database")
+                return {"error": f"Skill '{skill_name}' not found"}
+
+            # Get active version
+            version_row = await session.execute(
+                text("""
+                    SELECT id, data FROM skill_versions
+                    WHERE skill_id = :skill_id AND (data->>'is_active')::bool = TRUE
+                    ORDER BY (data->>'created_at')::timestamptz DESC
+                    LIMIT 1
+                """),
+                {"skill_id": skill_id}
+            )
+            version_data = version_row.fetchone()
+            if not version_row:
+                logger.warning(f"No active version for skill '{skill_name}'")
+                return {"error": f"No active version for skill '{skill_name}'"}
+
+            version_id = version_data[0]
+            skill_version = version_data[1]
+            code = skill_version.get("code")
+            language = skill_version.get("language", "python")
+            entry_point = skill_version.get("entry_point", "run")
+            requirements = skill_version.get("requirements", [])
+
+        if not code:
+            return {"error": f"Skill '{skill_name}' has no code"}
+
+        # For now, we only support Python
+        if language != "python":
+            return {"error": f"Unsupported language for skill '{skill_name}': {language}"}
+
+        # Execute the code in the appropriate sandbox
         try:
-            return await func(params)
+            result = await container_manager.run_skill_in_container(
+                skill_code=code,
+                input_data=params,
+                config={},  # we don't have a config yet
+                sandbox_level=sandbox_level,
+                task_id=task_id,
+                project_id=project_id,
+                agent_id=agent_id,
+            )
+            return result
         except Exception as e:
-            logger.exception(f"Skill {skill_name} failed")
+            logger.exception(f"Skill execution failed: {e}")
             return {"error": str(e), "simulated": False}
 
     async def _call_simulator(self, skill_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -83,196 +139,3 @@ class SkillExecutor:
         except Exception as e:
             logger.error(f"Simulator call failed: {e}")
             return {"error": str(e), "simulated": True}
-
-    # --- Real skill implementations (with availability checks) ---
-
-    async def _web_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform a web search using configured API."""
-        query = params.get("query", "")
-        if not query:
-            return {"error": "Missing query"}
-
-        api_key = os.getenv("SEARCH_API_KEY")
-        engine = os.getenv("SEARCH_ENGINE", "google").lower()
-
-        if engine == "serpapi" and api_key:
-            client = await self._get_http_client()
-            try:
-                resp = await client.get(
-                    "https://serpapi.com/search",
-                    params={"q": query, "api_key": api_key, "engine": "google"}
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                results = []
-                for r in data.get("organic_results", []):
-                    results.append({
-                        "title": r.get("title"),
-                        "link": r.get("link"),
-                        "snippet": r.get("snippet")
-                    })
-                return {"results": results}
-            except Exception as e:
-                logger.error(f"Web search failed: {e}")
-                return {"error": str(e)}
-        else:
-            # Fallback mock
-            return {
-                "results": [
-                    {"title": f"Mock result for {query}", "url": "http://example.com", "snippet": "This is a mock result."}
-                ]
-            }
-
-    async def _ssh_execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a command on a remote server via SSH."""
-        if asyncssh is None:
-            return {"error": "asyncssh not installed"}
-
-        host = params.get("host")
-        port = params.get("port", 22)
-        username = params.get("username")
-        password = params.get("password")
-        command = params.get("command")
-
-        if not all([host, username, command]):
-            return {"error": "Missing required parameters"}
-
-        try:
-            async with asyncssh.connect(
-                host=host,
-                port=port,
-                username=username,
-                password=password,
-                known_hosts=None
-            ) as conn:
-                result = await conn.run(command, check=True)
-                return {
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "exit_code": result.exit_code
-                }
-        except Exception as e:
-            logger.error(f"SSH execution failed: {e}")
-            return {"error": str(e)}
-
-    async def _browser_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform browser automation using Playwright."""
-        if async_playwright is None:
-            return {"error": "playwright not installed"}
-
-        action = params.get("action")
-        url = params.get("url")
-        selector = params.get("selector")
-        value = params.get("value")
-
-        p = await async_playwright().start()
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-
-        try:
-            if action == "goto":
-                await page.goto(url)
-                content = await page.content()
-                return {"html": content, "title": await page.title()}
-            elif action == "click":
-                await page.goto(url)
-                await page.click(selector)
-                await page.wait_for_load_state()
-                return {"success": True, "html": await page.content()}
-            elif action == "type":
-                await page.goto(url)
-                await page.fill(selector, value)
-                return {"success": True}
-            elif action == "screenshot":
-                await page.goto(url)
-                screenshot = await page.screenshot(full_page=True)
-                import base64
-                return {"screenshot": base64.b64encode(screenshot).decode()}
-            else:
-                return {"error": f"Unknown action: {action}"}
-        except Exception as e:
-            logger.error(f"Browser action failed: {e}")
-            return {"error": str(e)}
-        finally:
-            await browser.close()
-            await p.stop()
-
-    async def _run_code(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute code in an isolated Docker container."""
-        if docker is None:
-            return {"error": "docker not installed"}
-
-        code = params.get("code", "")
-        language = params.get("language", "python").lower()
-
-        client = docker.from_env()
-        image_map = {
-            "python": "python:3.11-slim",
-            "node": "node:18-slim",
-            "bash": "alpine:latest",
-        }
-        image = image_map.get(language, "alpine:latest")
-
-        try:
-            if language == "python":
-                cmd = ["python", "-c", code]
-            elif language == "node":
-                cmd = ["node", "-e", code]
-            elif language == "bash":
-                cmd = ["sh", "-c", code]
-            else:
-                return {"error": f"Unsupported language: {language}"}
-
-            container = client.containers.run(
-                image=image,
-                command=cmd,
-                detach=False,
-                remove=True,
-                mem_limit="128m",
-                cpu_shares=512,
-                network_disabled=True,
-                read_only=True
-            )
-            logs = container.decode() if isinstance(container, bytes) else str(container)
-            return {"stdout": logs, "stderr": ""}
-        except Exception as e:
-            logger.error(f"Code execution failed: {e}")
-            return {"error": str(e)}
-
-    async def _api_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Make an HTTP request to an external API."""
-        method = params.get("method", "GET").upper()
-        url = params.get("url")
-        headers = params.get("headers", {})
-        body = params.get("body")
-
-        if not url:
-            return {"error": "Missing URL"}
-
-        client = await self._get_http_client()
-        try:
-            if method == "GET":
-                resp = await client.get(url, headers=headers)
-            elif method == "POST":
-                resp = await client.post(url, json=body, headers=headers)
-            elif method == "PUT":
-                resp = await client.put(url, json=body, headers=headers)
-            elif method == "DELETE":
-                resp = await client.delete(url, headers=headers)
-            else:
-                return {"error": f"Unsupported method: {method}"}
-
-            content_type = resp.headers.get("content-type", "")
-            if "application/json" in content_type:
-                data = resp.json()
-            else:
-                data = resp.text
-
-            return {
-                "status_code": resp.status_code,
-                "headers": dict(resp.headers),
-                "body": data
-            }
-        except Exception as e:
-            logger.error(f"API call failed: {e}")
-            return {"error": str(e)}
