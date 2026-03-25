@@ -20,30 +20,32 @@ async def test_create_artifact(tmp_path):
         # Mock _get_next_version to return 1 (no need for database)
         service._get_next_version = AsyncMock(return_value=1)
 
-        # Mock the result of the INSERT (no need to check)
-        mock_conn.execute = AsyncMock()
-        mock_conn.commit = AsyncMock()
+        # Mock get_latest_artifact to return None (no previous version)
+        with patch.object(service, 'get_latest_artifact', return_value=None):
+            # Mock the result of the INSERT (no need to check)
+            mock_conn.execute = AsyncMock()
+            mock_conn.commit = AsyncMock()
 
-        content = b"test content"
-        artifact = await service.create_artifact(
-            goal_id="g-test",
-            task_id="t-test",
-            file_path="test.txt",
-            content=content,
-            status="draft"
-        )
+            content = b"test content"
+            artifact = await service.create_artifact(
+                goal_id="g-test",
+                task_id="t-test",
+                file_path="test.txt",
+                content=content,
+                status="draft"
+            )
 
-        assert artifact.id.startswith("art-")
-        assert artifact.goal_id == "g-test"
-        assert artifact.task_id == "t-test"
-        assert artifact.file_path == "test.txt"
-        assert artifact.version == 1
-        assert artifact.status == "draft"
-        artifact_file = service.base_path / artifact.id
-        assert artifact_file.exists()
-        assert artifact_file.read_bytes() == content
-        mock_conn.execute.assert_awaited_once()
-        mock_conn.commit.assert_awaited_once()
+            assert artifact.id.startswith("art-")
+            assert artifact.goal_id == "g-test"
+            assert artifact.task_id == "t-test"
+            assert artifact.file_path == "test.txt"
+            assert artifact.version == 1
+            assert artifact.status == "draft"
+            artifact_file = service.base_path / artifact.id
+            assert artifact_file.exists()
+            assert artifact_file.read_bytes() == content
+            mock_conn.execute.assert_awaited_once()
+            mock_conn.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

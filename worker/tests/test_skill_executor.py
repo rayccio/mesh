@@ -5,29 +5,29 @@ from skill_executor import SkillExecutor
 @pytest.mark.asyncio
 async def test_skill_executor_permission_check():
     executor = SkillExecutor()
-    # Mock the database calls and container execution
+
     with patch('skill_executor.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Mock the skill query result to return a skill ID
-        mock_skill_result = MagicMock()
-        mock_skill_result.scalar.return_value = "sk-123"
-        mock_conn.execute.return_value = mock_skill_result
-
-        # Mock the version query result
-        mock_version_result = MagicMock()
-        mock_version_result.fetchone.return_value = ("sv-123", {
+        # Create a mock result proxy for the skills query
+        mock_skill_result = AsyncMock()
+        mock_skill_result.scalar = AsyncMock(return_value="sk-123")
+        # Create a mock result proxy for the versions query
+        mock_version_result = AsyncMock()
+        mock_version_result.fetchone = AsyncMock(return_value=("sv-123", {
             "code": "def run(input, config): return {'result': 'ok'}",
             "language": "python"
-        })
-        # Need to return the same result for the second execute
+        }))
+
+        # Side effect that returns the appropriate mock result based on the query text
         async def execute_side_effect(query, params):
-            if "SELECT id FROM skills" in query:
+            if "SELECT id FROM skills" in query.text:
                 return mock_skill_result
             else:
                 return mock_version_result
-        mock_conn.execute.side_effect = execute_side_effect
+
+        mock_conn.execute = AsyncMock(side_effect=execute_side_effect)
 
         # Mock container manager
         with patch('skill_executor.container_manager.run_skill_in_container', new_callable=AsyncMock) as mock_run:
@@ -51,6 +51,7 @@ async def test_skill_executor_permission_check():
     )
     assert "error" in result
     assert "not in allowed skills list" in result["error"]
+
 
 @pytest.mark.asyncio
 async def test_skill_executor_simulation():
