@@ -1,6 +1,6 @@
 # backend/app/api/v1/endpoints/goals.py
 from fastapi import APIRouter, HTTPException, Depends, Body
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from ....services.goal_engine import GoalEngine

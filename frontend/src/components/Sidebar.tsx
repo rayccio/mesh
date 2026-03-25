@@ -201,6 +201,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Skills
                 </button>
                 <button
+                  onClick={() => { onGlobalConfigCategoryChange('knowledge'); onGlobalConfigSubTabChange('layers'); }}
+                  className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    globalConfigCategory === 'knowledge' && globalConfigSubTab === 'layers'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+                  }`}
+                >
+                  Layers
+                </button>
+                <button
                   onClick={() => { onGlobalConfigCategoryChange('knowledge'); onGlobalConfigSubTabChange('meta'); }}
                   className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                     globalConfigCategory === 'knowledge' && globalConfigSubTab === 'meta'

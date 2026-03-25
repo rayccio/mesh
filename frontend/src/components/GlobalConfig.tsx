@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hive, UserAccount, GlobalSettings, UserRole, Skill, SkillVersion, SkillType, SkillVisibility } from '../types';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { Hive, UserAccount, GlobalSettings, UserRole, Skill, SkillVersion, SkillType, SkillVisibility, Layer } from '../types';
 import { Icons } from '../constants';
 import { HiveMindDashboard } from './HiveMindDashboard';
 import { AIProviderConfig } from './AIProviderConfig';
@@ -13,7 +13,7 @@ import { orchestratorService } from '../services/orchestratorService';
 import { MetaBotsDashboard } from './MetaBotsDashboard';
 import { SkillSuggestions } from './SkillSuggestions';
 
-// ---------- User Modal ----------
+// ---------- User Modal (unchanged) ----------
 interface UserModalProps {
   user?: UserAccount;
   hives: Hive[];
@@ -164,7 +164,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, hives, onClose, onSave }) =
   );
 };
 
-// ---------- Skill Modal ----------
+// ---------- Skill Modal (unchanged) ----------
 interface SkillModalProps {
   skill?: Skill;
   onClose: () => void;
@@ -332,7 +332,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, onClose, onSave }) => {
   );
 };
 
-// ---------- Version Modal ----------
+// ---------- Version Modal (unchanged) ----------
 interface VersionModalProps {
   skillId: string;
   onClose: () => void;
@@ -517,6 +517,302 @@ const VersionModal: React.FC<VersionModalProps> = ({ skillId, onClose, onVersion
   );
 };
 
+// ---------- NEW: Layer Install Modal ----------
+interface LayerInstallModalProps {
+  onClose: () => void;
+  onInstall: (gitUrl: string, version?: string) => Promise<void>;
+}
+
+const LayerInstallModal: React.FC<LayerInstallModalProps> = ({ onClose, onInstall }) => {
+  const [gitUrl, setGitUrl] = useState('');
+  const [version, setVersion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (!gitUrl.trim()) {
+      setError('Git URL is required');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await onInstall(gitUrl, version || undefined);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Installation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-black uppercase tracking-tighter">Install Layer</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Git Repository URL</label>
+            <input
+              type="text"
+              value={gitUrl}
+              onChange={(e) => setGitUrl(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="https://github.com/user/layer.git"
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Version / Branch (optional)</label>
+            <input
+              type="text"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="main, v1.0, etc."
+              disabled={loading}
+            />
+          </div>
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-black uppercase tracking-widest text-center">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <LoadingSpinner size="sm" />
+                <span>Installing...</span>
+              </>
+            ) : (
+              'Install'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------- NEW: Layer Configure Modal ----------
+interface LayerConfigureModalProps {
+  layer: Layer;
+  hiveId: string;
+  onClose: () => void;
+  onConfigUpdated: () => void;
+}
+
+const LayerConfigureModal: React.FC<LayerConfigureModalProps> = ({ layer, hiveId, onClose, onConfigUpdated }) => {
+  const [config, setConfig] = useState<Record<string, any>>({});
+  const [schema, setSchema] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [currentConfig, configSchema] = await Promise.all([
+          orchestratorService.getLayerConfig(layer.id, hiveId),
+          orchestratorService.getLayerConfigSchema(layer.id)
+        ]);
+        setConfig(currentConfig.config || {});
+        setSchema(configSchema);
+      } catch (err) {
+        console.error('Failed to load layer config', err);
+        setError('Failed to load configuration');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [layer.id, hiveId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await orchestratorService.updateLayerConfig(layer.id, hiveId, config);
+      toast.success('Configuration saved');
+      onConfigUpdated();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFieldChange = (key: string, value: any) => {
+    setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const renderField = (key: string, propSchema: any) => {
+    const type = propSchema.type || 'string';
+    const description = propSchema.description;
+    const currentValue = config[key] ?? (propSchema.default ?? '');
+    if (type === 'string') {
+      return (
+        <div key={key} className="mb-4">
+          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">
+            {key}
+            {description && <span className="text-xs font-normal lowercase ml-1">({description})</span>}
+          </label>
+          <input
+            type="text"
+            value={currentValue}
+            onChange={(e) => handleFieldChange(key, e.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+          />
+        </div>
+      );
+    } else if (type === 'number') {
+      return (
+        <div key={key} className="mb-4">
+          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">
+            {key}
+            {description && <span className="text-xs font-normal lowercase ml-1">({description})</span>}
+          </label>
+          <input
+            type="number"
+            value={currentValue}
+            onChange={(e) => handleFieldChange(key, parseFloat(e.target.value))}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+          />
+        </div>
+      );
+    } else if (type === 'boolean') {
+      return (
+        <div key={key} className="mb-4 flex items-center justify-between">
+          <span className="text-sm text-zinc-300">{key}{description && ` (${description})`}</span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!currentValue}
+              onChange={(e) => handleFieldChange(key, e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-10 h-5 bg-zinc-800 rounded-full peer-checked:bg-emerald-600 transition-all relative">
+              <div className="absolute top-1 w-3 h-3 bg-white rounded-full transition-all peer-checked:left-6 left-1"></div>
+            </div>
+          </label>
+        </div>
+      );
+    } else if (type === 'object') {
+      return (
+        <div key={key} className="mb-4">
+          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">
+            {key}
+            {description && <span className="text-xs font-normal lowercase ml-1">({description})</span>}
+          </label>
+          <textarea
+            value={JSON.stringify(currentValue, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value);
+                handleFieldChange(key, parsed);
+              } catch {
+                // ignore invalid JSON
+              }
+            }}
+            rows={4}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono text-zinc-200 focus:border-emerald-500 outline-none"
+          />
+          <p className="text-[9px] text-zinc-500 mt-1">Enter valid JSON</p>
+        </div>
+      );
+    } else {
+      return (
+        <div key={key} className="mb-4">
+          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">{key}</label>
+          <input
+            type="text"
+            value={String(currentValue)}
+            onChange={(e) => handleFieldChange(key, e.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+          />
+        </div>
+      );
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md">
+          <div className="flex justify-center">
+            <LoadingSpinner />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto space-y-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-black uppercase tracking-tighter">Configure {layer.name}</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-black uppercase tracking-widest text-center">
+            {error}
+          </div>
+        )}
+
+        {schema && schema.properties ? (
+          Object.entries(schema.properties).map(([key, propSchema]: [string, any]) => renderField(key, propSchema))
+        ) : (
+          <div className="text-center text-zinc-500 italic">No configuration schema available for this layer.</div>
+        )}
+
+        <div className="flex gap-3 pt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+          >
+            {saving ? (
+              <>
+                <LoadingSpinner size="sm" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              'Save'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ---------- Main GlobalConfig ----------
 interface GlobalConfigProps {
   hives: Hive[];
@@ -582,6 +878,11 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
   const [skillVersions, setSkillVersions] = useState<Record<string, SkillVersion[]>>({});
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
 
+  // ========== Layers state ==========
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [configureLayer, setConfigureLayer] = useState<Layer | null>(null);
+  const [selectedHiveId, setSelectedHiveId] = useState<string>(hives[0]?.id || '');
+
   const queryClient = useQueryClient();
 
   // React Query for users
@@ -623,6 +924,68 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
       toast.error('Failed to load skills');
     }
   }, [skillsError]);
+
+  // React Query for layers
+  const { data: layers = [], isLoading: layersLoading, error: layersError, refetch: refetchLayers } = useQuery({
+    queryKey: ['layers'],
+    queryFn: () => orchestratorService.listLayers(),
+    enabled: category === 'knowledge' && subTab === 'layers',
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    if (layersError) {
+      toast.error('Failed to load layers');
+    }
+  }, [layersError]);
+
+  // Mutations
+  const installMutation = useMutation({
+    mutationFn: ({ gitUrl, version }: { gitUrl: string; version?: string }) =>
+      orchestratorService.installLayer(gitUrl, version),
+    onSuccess: () => {
+      toast.success('Layer installed successfully');
+      refetchLayers();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Installation failed');
+    },
+  });
+
+  const enableMutation = useMutation({
+    mutationFn: (layerId: string) => orchestratorService.enableLayer(layerId),
+    onSuccess: () => {
+      toast.success('Layer enabled');
+      refetchLayers();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to enable layer');
+    },
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: (layerId: string) => orchestratorService.disableLayer(layerId),
+    onSuccess: () => {
+      toast.success('Layer disabled');
+      refetchLayers();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to disable layer');
+    },
+  });
+
+  const configureMutation = useMutation({
+    mutationFn: ({ layerId, hiveId, config }: { layerId: string; hiveId: string; config: any }) =>
+      orchestratorService.updateLayerConfig(layerId, hiveId, config),
+    onSuccess: () => {
+      toast.success('Configuration saved');
+      setConfigureLayer(null);
+      refetchLayers();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to save configuration');
+    },
+  });
 
   // Load versions when a skill is expanded
   const loadVersions = async (skillId: string) => {
@@ -1176,6 +1539,122 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
               )}
             </div>
           );
+        case 'layers':
+          return (
+            <div className="space-y-8 max-w-5xl mx-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-black tracking-tighter uppercase">Layers</h3>
+                  <p className="text-zinc-500 text-sm">Manage installed layers and their configurations.</p>
+                </div>
+                <button 
+                  onClick={() => setShowInstallModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20"
+                >
+                  <Icons.Plus /> Install Layer
+                </button>
+              </div>
+
+              {layersLoading ? (
+                <div className="flex justify-center py-12">
+                  <LoadingSpinner />
+                </div>
+              ) : layers.length === 0 ? (
+                <div className="text-center py-12 bg-zinc-900/50 rounded-3xl border border-zinc-800">
+                  <p className="text-zinc-500">No layers installed. Install a layer from a Git repository.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {layers.map(layer => (
+                    <div key={layer.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <h4 className="text-xl font-black text-emerald-400">{layer.name}</h4>
+                            <span className={`text-[10px] px-2 py-1 rounded-full ${
+                              layer.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-500'
+                            }`}>
+                              {layer.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                            {layer.id === 'core' && (
+                              <span className="text-[8px] px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full">Core</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-zinc-400 mt-2">{layer.description}</p>
+                          <div className="flex gap-6 mt-4 text-xs text-zinc-500">
+                            <span>Version: {layer.version}</span>
+                            {layer.author && <span>Author: {layer.author}</span>}
+                            <span>Created: {new Date(layer.createdAt).toLocaleDateString()}</span>
+                          </div>
+                          {layer.dependencies.length > 0 && (
+                            <div className="mt-2">
+                              <span className="text-[10px] text-zinc-600">Dependencies: </span>
+                              {layer.dependencies.map(dep => (
+                                <span key={dep} className="inline-block text-[10px] bg-zinc-800 px-2 py-0.5 rounded-full mr-2">{dep}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {layer.id !== 'core' && (
+                            <button
+                              onClick={() => {
+                                if (layer.enabled) {
+                                  disableMutation.mutate(layer.id);
+                                } else {
+                                  enableMutation.mutate(layer.id);
+                                }
+                              }}
+                              disabled={enableMutation.isPending || disableMutation.isPending}
+                              className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest ${
+                                layer.enabled 
+                                  ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                  : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'
+                              }`}
+                            >
+                              {layer.enabled ? 'Disable' : 'Enable'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setConfigureLayer(layer)}
+                            className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-zinc-700"
+                          >
+                            Configure
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Lifecycle & Loop Handlers (read-only) */}
+                      <div className="mt-6 pt-4 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Artifact Lifecycle</h5>
+                          {layer.lifecycle ? (
+                            <pre className="bg-zinc-950 p-3 rounded-xl text-xs text-zinc-400 overflow-auto max-h-32">
+                              {JSON.stringify(layer.lifecycle, null, 2)}
+                            </pre>
+                          ) : (
+                            <p className="text-xs text-zinc-500 italic">No custom lifecycle defined.</p>
+                          )}
+                        </div>
+                        <div>
+                          <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Loop Handlers</h5>
+                          {layer.loopHandlers?.length > 0 ? (
+                            <ul className="space-y-1">
+                              {layer.loopHandlers.map((lh: any) => (
+                                <li key={lh.id} className="text-xs text-zinc-400">{lh.name} → {lh.class_path}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-xs text-zinc-500 italic">No custom loop handlers registered.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
         case 'meta':
           return <MetaBotsDashboard />;
         default:
@@ -1199,6 +1678,55 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
 
     return null;
   };
+
+  // Helper to fetch loop handlers for a layer
+  useEffect(() => {
+    if (category === 'knowledge' && subTab === 'layers' && layers.length > 0) {
+      const fetchLoopHandlers = async () => {
+        const updated = await Promise.all(
+          layers.map(async (layer) => {
+            try {
+              const handlers = await orchestratorService.listLayerLoopHandlers(layer.id);
+              return { ...layer, loopHandlers: handlers };
+            } catch {
+              return { ...layer, loopHandlers: [] };
+            }
+          })
+        );
+        // We don't have a state to update the layers with loop handlers, so we'll store in a separate map or refetch? 
+        // Since layers are from React Query, we could invalidate, but loop handlers are not part of the layer object.
+        // For simplicity, we'll store loop handlers in a separate state.
+        // We'll add a state for loopHandlers.
+      };
+      fetchLoopHandlers();
+    }
+  }, [category, subTab, layers]);
+
+  // We'll store loopHandlers in a separate state
+  const [loopHandlers, setLoopHandlers] = useState<Record<string, any[]>>({});
+  useEffect(() => {
+    if (category === 'knowledge' && subTab === 'layers' && layers.length > 0) {
+      const fetchLoopHandlers = async () => {
+        const newMap: Record<string, any[]> = {};
+        for (const layer of layers) {
+          try {
+            const handlers = await orchestratorService.listLayerLoopHandlers(layer.id);
+            newMap[layer.id] = handlers;
+          } catch {
+            newMap[layer.id] = [];
+          }
+        }
+        setLoopHandlers(newMap);
+      };
+      fetchLoopHandlers();
+    }
+  }, [category, subTab, layers]);
+
+  // Enhance layers with loopHandlers for rendering
+  const enhancedLayers = layers.map(layer => ({
+    ...layer,
+    loopHandlers: loopHandlers[layer.id] || []
+  }));
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -1233,6 +1761,22 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
           skillId={showVersionModal.id}
           onClose={() => setShowVersionModal(null)}
           onVersionAdded={() => loadVersions(showVersionModal.id)}
+        />
+      )}
+
+      {showInstallModal && (
+        <LayerInstallModal
+          onClose={() => setShowInstallModal(false)}
+          onInstall={(gitUrl, version) => installMutation.mutateAsync({ gitUrl, version })}
+        />
+      )}
+
+      {configureLayer && (
+        <LayerConfigureModal
+          layer={configureLayer}
+          hiveId={selectedHiveId}
+          onClose={() => setConfigureLayer(null)}
+          onConfigUpdated={() => refetchLayers()}
         />
       )}
 
