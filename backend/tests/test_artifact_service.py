@@ -20,6 +20,16 @@ async def test_create_artifact(tmp_path):
         # Mock _get_next_version to return 1 (no need for database)
         service._get_next_version = AsyncMock(return_value=1)
 
+        # Mock _get_lifecycle to return a simple lifecycle dict
+        service._get_lifecycle = AsyncMock(return_value={
+            "states": ["draft", "built", "tested", "final"],
+            "transitions": {
+                "draft": ["built"],
+                "built": ["tested"],
+                "tested": ["final"],
+            }
+        })
+
         # Mock get_latest_artifact to return None (no previous version)
         with patch.object(service, 'get_latest_artifact', return_value=None):
             # Mock the result of the INSERT (no need to check)

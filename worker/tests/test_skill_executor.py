@@ -13,6 +13,7 @@ async def test_skill_executor_permission_check():
         # Create a mock result proxy for the skills query
         mock_skill_result = AsyncMock()
         mock_skill_result.scalar = AsyncMock(return_value="sk-123")
+
         # Create a mock result proxy for the versions query
         mock_version_result = AsyncMock()
         mock_version_result.fetchone = AsyncMock(return_value=("sv-123", {
