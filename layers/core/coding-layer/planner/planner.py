@@ -5,8 +5,17 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-# Backend imports – safe because this runs in the backend process
-from app.models.types import HiveTask, HiveTaskStatus
+# Try to import from app (real environment); fallback for tests
+try:
+    from app.models.types import HiveTask, HiveTaskStatus
+except ImportError:
+    # Dummy classes for testing
+    class HiveTask:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+    class HiveTaskStatus:
+        PENDING = "pending"
+
 from app.services.litellm_service import generate_with_messages
 from app.core.config import settings
 

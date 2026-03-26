@@ -25,6 +25,6 @@ Dockerfile:"""
             timeout=30
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = await resp.json()
         dockerfile = data.get("response", "")
     return {"dockerfile": dockerfile}

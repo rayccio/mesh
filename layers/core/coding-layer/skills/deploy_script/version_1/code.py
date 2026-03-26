@@ -25,6 +25,6 @@ Script:"""
             timeout=30
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = await resp.json()
         script = data.get("response", "")
     return {"script": script}
