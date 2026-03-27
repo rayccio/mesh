@@ -1,0 +1,10 @@
+{
+  "states": ["draft", "built", "tested", "reviewed", "final", "failed"],
+  "transitions": {
+    "draft": ["built"],
+    "built": ["tested"],
+    "tested": ["reviewed", "failed"],
+    "reviewed": ["final", "built"],
+    "failed": ["built"]
+  }
+}
