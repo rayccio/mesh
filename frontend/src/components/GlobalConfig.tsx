@@ -13,6 +13,13 @@ import { orchestratorService } from '../services/orchestratorService';
 import { MetaBotsDashboard } from './MetaBotsDashboard';
 import { SkillSuggestions } from './SkillSuggestions';
 
+// ---------- Helper function to safely format date ----------
+const formatDate = (dateStr: string | undefined): string => {
+  if (!dateStr) return 'N/A';
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? 'Invalid Date' : d.toLocaleDateString();
+};
+
 // ---------- User Modal (unchanged) ----------
 interface UserModalProps {
   user?: UserAccount;
@@ -517,7 +524,7 @@ const VersionModal: React.FC<VersionModalProps> = ({ skillId, onClose, onVersion
   );
 };
 
-// ---------- NEW: Layer Install Modal ----------
+// ---------- Layer Install Modal ----------
 interface LayerInstallModalProps {
   onClose: () => void;
   onInstall: (gitUrl: string, version?: string) => Promise<void>;
@@ -612,7 +619,7 @@ const LayerInstallModal: React.FC<LayerInstallModalProps> = ({ onClose, onInstal
   );
 };
 
-// ---------- NEW: Layer Configure Modal ----------
+// ---------- Layer Configure Modal ----------
 interface LayerConfigureModalProps {
   layer: Layer;
   hiveId: string;
@@ -756,14 +763,17 @@ const LayerConfigureModal: React.FC<LayerConfigureModalProps> = ({ layer, hiveId
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md">
-          <div className="flex justify-center">
-            <LoadingSpinner />
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md flex justify-center">
+          <div className="text-center">
+            <LoadingSpinner size="lg" />
+            <p className="text-zinc-400 mt-4">Loading configuration...</p>
           </div>
         </div>
       </div>
     );
   }
+
+  const hasConfig = schema && Object.keys(schema).length > 0 && schema.properties && Object.keys(schema.properties).length > 0;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -779,35 +789,43 @@ const LayerConfigureModal: React.FC<LayerConfigureModalProps> = ({ layer, hiveId
           </div>
         )}
 
-        {schema && schema.properties ? (
-          Object.entries(schema.properties).map(([key, propSchema]: [string, any]) => renderField(key, propSchema))
+        {!hasConfig ? (
+          <div className="text-center py-8 text-zinc-500 italic">
+            No configuration options available for this layer.
+          </div>
         ) : (
-          <div className="text-center text-zinc-500 italic">No configuration schema available for this layer.</div>
-        )}
-
-        <div className="flex gap-3 pt-4">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <>
-                <LoadingSpinner size="sm" />
-                <span>Saving...</span>
-              </>
+          <>
+            {schema && schema.properties ? (
+              Object.entries(schema.properties).map(([key, propSchema]: [string, any]) => renderField(key, propSchema))
             ) : (
-              'Save'
+              <div className="text-center text-zinc-500 italic">No configuration schema available for this layer.</div>
             )}
-          </button>
-        </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -938,6 +956,32 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
       toast.error('Failed to load layers');
     }
   }, [layersError]);
+
+  // Fetch loop handlers for layers
+  const [loopHandlers, setLoopHandlers] = useState<Record<string, any[]>>({});
+  useEffect(() => {
+    if (category === 'knowledge' && subTab === 'layers' && layers.length > 0) {
+      const fetchLoopHandlers = async () => {
+        const newMap: Record<string, any[]> = {};
+        for (const layer of layers) {
+          try {
+            const handlers = await orchestratorService.listLayerLoopHandlers(layer.id);
+            newMap[layer.id] = handlers;
+          } catch {
+            newMap[layer.id] = [];
+          }
+        }
+        setLoopHandlers(newMap);
+      };
+      fetchLoopHandlers();
+    }
+  }, [category, subTab, layers]);
+
+  // Enhance layers with loopHandlers
+  const enhancedLayers = layers.map(layer => ({
+    ...layer,
+    loopHandlers: loopHandlers[layer.id] || []
+  }));
 
   // Mutations
   const installMutation = useMutation({
@@ -1559,13 +1603,13 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                 <div className="flex justify-center py-12">
                   <LoadingSpinner />
                 </div>
-              ) : layers.length === 0 ? (
+              ) : enhancedLayers.length === 0 ? (
                 <div className="text-center py-12 bg-zinc-900/50 rounded-3xl border border-zinc-800">
                   <p className="text-zinc-500">No layers installed. Install a layer from a Git repository.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-6">
-                  {layers.map(layer => (
+                  {enhancedLayers.map(layer => (
                     <div key={layer.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -1584,7 +1628,7 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                           <div className="flex gap-6 mt-4 text-xs text-zinc-500">
                             <span>Version: {layer.version}</span>
                             {layer.author && <span>Author: {layer.author}</span>}
-                            <span>Created: {new Date(layer.createdAt).toLocaleDateString()}</span>
+                            <span>Created: {formatDate(layer.createdAt)}</span>
                           </div>
                           {layer.dependencies.length > 0 && (
                             <div className="mt-2">
@@ -1624,7 +1668,7 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                         </div>
                       </div>
 
-                      {/* Lifecycle & Loop Handlers (read-only) */}
+                      {/* Lifecycle & Loop Handlers */}
                       <div className="mt-6 pt-4 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <h5 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Artifact Lifecycle</h5>
@@ -1678,55 +1722,6 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
 
     return null;
   };
-
-  // Helper to fetch loop handlers for a layer
-  useEffect(() => {
-    if (category === 'knowledge' && subTab === 'layers' && layers.length > 0) {
-      const fetchLoopHandlers = async () => {
-        const updated = await Promise.all(
-          layers.map(async (layer) => {
-            try {
-              const handlers = await orchestratorService.listLayerLoopHandlers(layer.id);
-              return { ...layer, loopHandlers: handlers };
-            } catch {
-              return { ...layer, loopHandlers: [] };
-            }
-          })
-        );
-        // We don't have a state to update the layers with loop handlers, so we'll store in a separate map or refetch? 
-        // Since layers are from React Query, we could invalidate, but loop handlers are not part of the layer object.
-        // For simplicity, we'll store loop handlers in a separate state.
-        // We'll add a state for loopHandlers.
-      };
-      fetchLoopHandlers();
-    }
-  }, [category, subTab, layers]);
-
-  // We'll store loopHandlers in a separate state
-  const [loopHandlers, setLoopHandlers] = useState<Record<string, any[]>>({});
-  useEffect(() => {
-    if (category === 'knowledge' && subTab === 'layers' && layers.length > 0) {
-      const fetchLoopHandlers = async () => {
-        const newMap: Record<string, any[]> = {};
-        for (const layer of layers) {
-          try {
-            const handlers = await orchestratorService.listLayerLoopHandlers(layer.id);
-            newMap[layer.id] = handlers;
-          } catch {
-            newMap[layer.id] = [];
-          }
-        }
-        setLoopHandlers(newMap);
-      };
-      fetchLoopHandlers();
-    }
-  }, [category, subTab, layers]);
-
-  // Enhance layers with loopHandlers for rendering
-  const enhancedLayers = layers.map(layer => ({
-    ...layer,
-    loopHandlers: loopHandlers[layer.id] || []
-  }));
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
