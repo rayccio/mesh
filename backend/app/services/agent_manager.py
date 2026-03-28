@@ -45,20 +45,12 @@ class AgentManager:
                 """),
                 {"role_name": role_name}
             )
-            row = result.fetchone()          # <-- FIXED: removed await
+            row = await result.fetchone()          # <-- FIXED: added await
             if row:
                 return row[0], row[1], row[2]
         return None, None, None
 
     def _get_prompts_for_role(self, role: str) -> tuple[str, str, str]:
-        # First try to get from database (async, but we need to handle async)
-        # For now, we'll keep the constants fallback; actual async call will be made in create_agent.
-        # We'll move the async logic to create_role_agent.
-        # So this method is deprecated; we'll remove it and use async version in create_role_agent.
-        # We'll just keep it for backward compatibility but mark as deprecated.
-        # We'll add a new async method.
-        # To avoid major refactor, we'll leave this as sync and update create_role_agent to call async version.
-        # For now, we'll just return constants as fallback.
         if role == "builder":
             return BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS
         elif role == "tester":
@@ -424,7 +416,6 @@ class AgentManager:
     async def spawn_agent_for_task(self, hive_id: str, required_skill_ids: List[str], agent_type: str) -> Optional[Agent]:
         skill_manager = SkillManager()
 
-        # agent_type is already a string, no need to convert to enum
         reasoning = ReasoningConfig(
             model="openai/gpt-4o",
             temperature=0.7,
