@@ -22,6 +22,7 @@ logging.basicConfig(
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from .core.config import settings
 from .api.v1.router import api_router
 from .api.v1.endpoints.ws import router as ws_router
@@ -37,7 +38,7 @@ from .services.task_manager import TaskManager
 from .services.vector_service import vector_service
 from .models.types import UserCreate, UserRole, GlobalSettings, AgentUpdate
 from .api.v1.endpoints.bridges import BRIDGE_CONTAINERS
-from .core.database import engine, Base
+from .core.database import engine, Base, AsyncSessionLocal
 from .models import db_models
 from sentence_transformers import SentenceTransformer
 import asyncio
@@ -149,6 +150,27 @@ def create_app() -> FastAPI:
         await vector_service.connect()
         await vector_service.ensure_collection(dim=384)
         logger.info("Qdrant ready")
+
+        # Ensure layers table has the 'type' column (migration for existing databases)
+        try:
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    text("""
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'layers' AND column_name = 'type'
+                            ) THEN
+                                ALTER TABLE layers ADD COLUMN type VARCHAR DEFAULT 'contrib';
+                            END IF;
+                        END $$;
+                    """)
+                )
+                await session.commit()
+            logger.info("Ensured layers table has 'type' column.")
+        except Exception as e:
+            logger.error(f"Failed to add 'type' column to layers table: {e}")
 
         # Load core layers from filesystem
         try:

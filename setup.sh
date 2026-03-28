@@ -418,6 +418,10 @@ docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo
 echo -e "${YELLOW}🔄 Adding layerId to tasks...${NC}"
 docker exec hivebot_backend python /app/scripts/add_layer_id_to_tasks.py || echo -e "${RED}❌ Adding layerId to tasks failed, but continuing...${NC}"
 
+# Add type column to layers table (Phase 0)
+echo -e "${YELLOW}🔄 Adding type column to layers table...${NC}"
+docker exec hivebot_backend python /app/scripts/add_layer_type_column.py || echo -e "${RED}❌ Failed to add type column, but continuing...${NC}"
+
 # --- 14. Install CLI wrapper (Phase 2) ---
 echo -e "${YELLOW}🛠️ Installing HiveBot CLI...${NC}"
 if [ -f ./hivebot ]; then
